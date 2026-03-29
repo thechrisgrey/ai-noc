@@ -520,40 +520,43 @@ export default function Dashboard() {
     let reconnectTimer: ReturnType<typeof setTimeout>;
 
     function connect() {
-      const apiUrl = import.meta.env.VITE_API_URL || "";
-      let wsUrl: string;
-      if (apiUrl) {
-        // Derive WebSocket URL from API URL (http://host -> ws://host/ws)
-        wsUrl = apiUrl.replace(/^http/, "ws") + "/ws";
-      } else {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        wsUrl = `${protocol}//${window.location.host}/ws`;
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || "";
+        let wsUrl: string;
+        if (apiUrl) {
+          wsUrl = apiUrl.replace(/^http/, "ws") + "/ws";
+        } else {
+          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+          wsUrl = `${protocol}//${window.location.host}/ws`;
+        }
+        ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "new_items" && data.count > 0) {
+              setNewSignals((prev) => prev + data.count);
+            }
+          } catch {}
+        };
+
+        ws.onclose = () => {
+          reconnectTimer = setTimeout(connect, 5000);
+        };
+
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch {
+        // WebSocket not available (e.g. mixed content) — fall back to polling
       }
-      ws = new WebSocket(wsUrl);
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "new_items" && data.count > 0) {
-            setNewSignals((prev) => prev + data.count);
-          }
-        } catch {}
-      };
-
-      ws.onclose = () => {
-        reconnectTimer = setTimeout(connect, 5000);
-      };
-
-      ws.onerror = () => {
-        ws?.close();
-      };
     }
 
     connect();
 
     return () => {
       clearTimeout(reconnectTimer);
-      ws?.close();
+      try { ws?.close(); } catch {}
     };
   }, []);
 

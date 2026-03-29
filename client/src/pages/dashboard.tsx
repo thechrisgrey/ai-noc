@@ -520,8 +520,16 @@ export default function Dashboard() {
     let reconnectTimer: ReturnType<typeof setTimeout>;
 
     function connect() {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      const apiUrl = import.meta.env.VITE_API_URL || "";
+      let wsUrl: string;
+      if (apiUrl) {
+        // Derive WebSocket URL from API URL (http://host -> ws://host/ws)
+        wsUrl = apiUrl.replace(/^http/, "ws") + "/ws";
+      } else {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        wsUrl = `${protocol}//${window.location.host}/ws`;
+      }
+      ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
         try {

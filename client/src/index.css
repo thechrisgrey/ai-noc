@@ -1,0 +1,405 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* TACTICAL COMMAND CENTER THEME — always dark */
+:root {
+  --button-outline: rgba(255,255,255, .10);
+  --badge-outline: rgba(255,255,255, .05);
+  --opaque-button-border-intensity: 9;
+  --elevate-1: rgba(255,255,255, .04);
+  --elevate-2: rgba(255,255,255, .09);
+
+  /* Deep dark surfaces */
+  --background: 210 15% 6%;
+  --foreground: 180 10% 88%;
+
+  --border: 180 8% 14%;
+  --card: 210 12% 8%;
+  --card-foreground: 180 10% 88%;
+  --card-border: 180 8% 12%;
+
+  --sidebar: 210 15% 7%;
+  --sidebar-foreground: 180 10% 88%;
+  --sidebar-border: 180 8% 14%;
+  --sidebar-primary: 175 85% 40%;
+  --sidebar-primary-foreground: 210 15% 6%;
+  --sidebar-accent: 180 10% 12%;
+  --sidebar-accent-foreground: 180 10% 88%;
+  --sidebar-ring: 175 85% 40%;
+
+  --popover: 210 12% 10%;
+  --popover-foreground: 180 10% 88%;
+  --popover-border: 180 8% 14%;
+
+  /* Cyan/teal primary — tactical accent */
+  --primary: 175 85% 40%;
+  --primary-foreground: 210 15% 6%;
+
+  --secondary: 210 10% 14%;
+  --secondary-foreground: 180 10% 88%;
+
+  --muted: 210 10% 16%;
+  --muted-foreground: 180 5% 50%;
+
+  --accent: 175 30% 14%;
+  --accent-foreground: 180 10% 88%;
+
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 98%;
+
+  --input: 180 8% 20%;
+  --ring: 175 85% 40%;
+
+  /* Chart colors — tactical palette */
+  --chart-1: 175 85% 45%;
+  --chart-2: 140 60% 45%;
+  --chart-3: 45 80% 55%;
+  --chart-4: 280 60% 55%;
+  --chart-5: 0 70% 55%;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --radius: 0.375rem;
+
+  --shadow-2xs: 0 0 0 0 transparent;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.5);
+  --shadow: 0 2px 6px rgba(0,0,0,.5);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.6);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.7);
+  --shadow-xl: 0 12px 40px rgba(0,0,0,.8);
+  --shadow-2xl: 0 20px 60px rgba(0,0,0,.9);
+
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Fallback for older browsers */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+/* Force dark mode always */
+.dark {
+  --button-outline: rgba(255,255,255, .10);
+  --badge-outline: rgba(255,255,255, .05);
+  --opaque-button-border-intensity: 9;
+  --elevate-1: rgba(255,255,255, .04);
+  --elevate-2: rgba(255,255,255, .09);
+  --background: 210 15% 6%;
+  --foreground: 180 10% 88%;
+  --border: 180 8% 14%;
+  --card: 210 12% 8%;
+  --card-foreground: 180 10% 88%;
+  --card-border: 180 8% 12%;
+  --sidebar: 210 15% 7%;
+  --sidebar-foreground: 180 10% 88%;
+  --sidebar-border: 180 8% 14%;
+  --sidebar-primary: 175 85% 40%;
+  --sidebar-primary-foreground: 210 15% 6%;
+  --sidebar-accent: 180 10% 12%;
+  --sidebar-accent-foreground: 180 10% 88%;
+  --sidebar-ring: 175 85% 40%;
+  --popover: 210 12% 10%;
+  --popover-foreground: 180 10% 88%;
+  --popover-border: 180 8% 14%;
+  --primary: 175 85% 40%;
+  --primary-foreground: 210 15% 6%;
+  --secondary: 210 10% 14%;
+  --secondary-foreground: 180 10% 88%;
+  --muted: 210 10% 16%;
+  --muted-foreground: 180 5% 50%;
+  --accent: 175 30% 14%;
+  --accent-foreground: 180 10% 88%;
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --input: 180 8% 20%;
+  --ring: 175 85% 40%;
+  --chart-1: 175 85% 45%;
+  --chart-2: 140 60% 45%;
+  --chart-3: 45 80% 55%;
+  --chart-4: 280 60% 55%;
+  --chart-5: 0 70% 55%;
+  --shadow-2xs: 0 0 0 0 transparent;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.5);
+  --shadow: 0 2px 6px rgba(0,0,0,.5);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.6);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.7);
+  --shadow-xl: 0 12px 40px rgba(0,0,0,.8);
+  --shadow-2xl: 0 20px 60px rgba(0,0,0,.9);
+
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    overflow: hidden;
+  }
+}
+
+/* Scanline overlay effect */
+.scanlines::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 200, 0.015) 2px,
+    rgba(0, 255, 200, 0.015) 4px
+  );
+}
+
+/* Grid background effect */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 200, 180, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 200, 180, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 8px rgba(0, 200, 180, 0.3), 0 0 20px rgba(0, 200, 180, 0.1);
+}
+
+.glow-text-cyan {
+  text-shadow: 0 0 8px rgba(0, 200, 180, 0.5);
+}
+
+.glow-green {
+  box-shadow: 0 0 8px rgba(0, 200, 100, 0.3), 0 0 20px rgba(0, 200, 100, 0.1);
+}
+
+.glow-red {
+  box-shadow: 0 0 8px rgba(255, 60, 60, 0.3), 0 0 20px rgba(255, 60, 60, 0.1);
+}
+
+.glow-amber {
+  box-shadow: 0 0 8px rgba(255, 180, 0, 0.3), 0 0 20px rgba(255, 180, 0, 0.1);
+}
+
+/* Breaking news pulse */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 60, 60, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(255, 60, 60, 0.6), 0 0 24px rgba(255, 60, 60, 0.2); }
+}
+
+.pulse-breaking {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Status indicator pulse */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* Data stream animation */
+@keyframes scroll-data {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+/* Shimmer for loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, hsl(210, 12%, 8%) 25%, hsl(210, 12%, 12%) 50%, hsl(210, 12%, 8%) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Breaking news marquee */
+@keyframes marquee-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: inline-flex;
+  animation: marquee-scroll 35s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Feed card entrance */
+@keyframes feed-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.feed-enter {
+  animation: feed-enter 0.25s ease-out both;
+}
+
+/* Monospace data readout */
+.data-readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(210, 15%, 6%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(180, 8%, 20%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(175, 85%, 40%);
+}
+
+/* Utility for hiding scrollbar */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Category colors */
+.cat-model-release { color: hsl(175, 85%, 50%); }
+.cat-research { color: hsl(280, 70%, 65%); }
+.cat-funding { color: hsl(45, 90%, 60%); }
+.cat-product { color: hsl(200, 80%, 55%); }
+.cat-policy { color: hsl(0, 70%, 60%); }
+.cat-infrastructure { color: hsl(140, 60%, 50%); }
+
+.cat-bg-model-release { background-color: hsla(175, 85%, 50%, 0.12); }
+.cat-bg-research { background-color: hsla(280, 70%, 65%, 0.12); }
+.cat-bg-funding { background-color: hsla(45, 90%, 60%, 0.12); }
+.cat-bg-product { background-color: hsla(200, 80%, 55%, 0.12); }
+.cat-bg-policy { background-color: hsla(0, 70%, 60%, 0.12); }
+.cat-bg-infrastructure { background-color: hsla(140, 60%, 50%, 0.12); }
+
+@layer utilities {
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  .no-default-hover-elevate {}
+  .no-default-active-elevate {}
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after {
+    inset: -1px;
+  }
+}

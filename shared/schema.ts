@@ -43,9 +43,17 @@ export const watchlists = pgTable("watchlists", {
   createdAt: text("created_at").notNull(),
 });
 
+export const briefings = pgTable("briefings", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  itemCount: integer("item_count").notNull(),
+  generatedAt: text("generated_at").notNull(),
+});
+
 export const insertFeedItemSchema = createInsertSchema(feedItems).omit({ id: true });
 export const insertBookmarkSchema = createInsertSchema(bookmarks).omit({ id: true });
 export const insertWatchlistSchema = createInsertSchema(watchlists).omit({ id: true });
+export const insertBriefingSchema = createInsertSchema(briefings).omit({ id: true });
 
 export type FeedItem = typeof feedItems.$inferSelect;
 export type InsertFeedItem = z.infer<typeof insertFeedItemSchema>;
@@ -53,3 +61,5 @@ export type Bookmark = typeof bookmarks.$inferSelect;
 export type InsertBookmark = z.infer<typeof insertBookmarkSchema>;
 export type Watchlist = typeof watchlists.$inferSelect;
 export type InsertWatchlist = z.infer<typeof insertWatchlistSchema>;
+export type Briefing = typeof briefings.$inferSelect;
+export type InsertBriefing = z.infer<typeof insertBriefingSchema>;

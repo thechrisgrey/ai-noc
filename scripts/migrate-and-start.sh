@@ -54,6 +54,13 @@ async function migrate() {
         sort TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS briefings (
+        id SERIAL PRIMARY KEY,
+        content TEXT NOT NULL,
+        item_count INTEGER NOT NULL,
+        generated_at TEXT NOT NULL
+      );
     \`);
     console.log('Schema applied successfully');
   } finally {

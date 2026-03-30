@@ -1,4 +1,4 @@
-import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, feedItems, bookmarks, watchlists } from "@shared/schema";
+import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, desc, like, or, and, lt, count, sql, inArray } from "drizzle-orm";
@@ -67,6 +67,8 @@ export interface IStorage {
   getWatchlists(): Promise<Watchlist[]>;
   createWatchlist(w: InsertWatchlist): Promise<Watchlist>;
   deleteWatchlist(id: number): Promise<void>;
+  getLatestBriefing(): Promise<Briefing | undefined>;
+  createBriefing(b: InsertBriefing): Promise<Briefing>;
   close(): Promise<void>;
 }
 
@@ -290,6 +292,20 @@ export class DatabaseStorage implements IStorage {
 
   async deleteWatchlist(id: number): Promise<void> {
     await db.delete(watchlists).where(eq(watchlists.id, id));
+  }
+
+  async getLatestBriefing(): Promise<Briefing | undefined> {
+    const rows = await db
+      .select()
+      .from(briefings)
+      .orderBy(desc(briefings.generatedAt))
+      .limit(1);
+    return rows[0];
+  }
+
+  async createBriefing(b: InsertBriefing): Promise<Briefing> {
+    const rows = await db.insert(briefings).values(b).returning();
+    return rows[0];
   }
 
   async close(): Promise<void> {

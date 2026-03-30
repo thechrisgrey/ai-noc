@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { fetchAllFeeds, seedDemoData } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
+import { generateBriefing } from "./briefing";
 
 let lastRefreshed: string | null = null;
 
@@ -52,7 +53,13 @@ export async function registerRoutes(
         }
       }
     })
+    .then(() => generateBriefing().catch(err => console.error("[Briefing] Initial generation failed:", err.message)))
     .catch(err => console.error("[Routes] Initial feed fetch failed:", err.message));
+
+  // Generate briefing every hour
+  setInterval(() => {
+    generateBriefing().catch(err => console.error("[Briefing] Hourly generation failed:", err.message));
+  }, 60 * 60 * 1000);
 
   // Poll feeds every 2 minutes for near-real-time coverage
   setInterval(() => {
@@ -172,6 +179,30 @@ export async function registerRoutes(
       res.json({ health, summary });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source health" });
+    }
+  });
+
+  // Briefing
+  app.get("/api/briefing", async (_req, res) => {
+    try {
+      const briefing = await storage.getLatestBriefing();
+      res.json(briefing || { content: null, generatedAt: null, itemCount: 0 });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch briefing" });
+    }
+  });
+
+  app.post("/api/briefing/regenerate", async (_req, res) => {
+    try {
+      const content = await generateBriefing();
+      if (content) {
+        const briefing = await storage.getLatestBriefing();
+        res.json(briefing);
+      } else {
+        res.status(503).json({ error: "Could not generate briefing" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Failed to regenerate briefing" });
     }
   });
 

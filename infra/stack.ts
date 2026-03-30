@@ -6,6 +6,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
 export class AiNocStack extends cdk.Stack {
@@ -104,6 +105,7 @@ export class AiNocStack extends cdk.Stack {
         DB_HOST: database.instanceEndpoint.hostname,
         DB_PORT: "5432",
         DB_NAME: "ainoc",
+        BEDROCK_REGION: "us-east-1",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(dbCredentials, "username"),
@@ -133,6 +135,14 @@ export class AiNocStack extends cdk.Stack {
 
     // Grant Fargate task read access to the DB secret
     dbCredentials.grantRead(taskDef.taskRole);
+
+    // Grant Bedrock InvokeModel for AI briefing generation
+    taskDef.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel"],
+        resources: ["arn:aws:bedrock:us-east-1::foundation-model/anthropic.*"],
+      }),
+    );
 
     // ─── Application Load Balancer ─────────────────────────
     const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", {

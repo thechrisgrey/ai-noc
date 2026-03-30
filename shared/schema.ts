@@ -33,10 +33,23 @@ export const bookmarks = pgTable("bookmarks", {
   createdAt: text("created_at").notNull(),
 });
 
+export const watchlists = pgTable("watchlists", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category"),
+  source: text("source"),
+  search: text("search"),
+  sort: text("sort"),
+  createdAt: text("created_at").notNull(),
+});
+
 export const insertFeedItemSchema = createInsertSchema(feedItems).omit({ id: true });
 export const insertBookmarkSchema = createInsertSchema(bookmarks).omit({ id: true });
+export const insertWatchlistSchema = createInsertSchema(watchlists).omit({ id: true });
 
 export type FeedItem = typeof feedItems.$inferSelect;
 export type InsertFeedItem = z.infer<typeof insertFeedItemSchema>;
 export type Bookmark = typeof bookmarks.$inferSelect;
 export type InsertBookmark = z.infer<typeof insertBookmarkSchema>;
+export type Watchlist = typeof watchlists.$inferSelect;
+export type InsertWatchlist = z.infer<typeof insertWatchlistSchema>;

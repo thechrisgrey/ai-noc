@@ -11,6 +11,7 @@ import {
   ChevronDown, ChevronUp,
 } from "lucide-react";
 import * as notifications from "@/lib/notifications";
+import { useToast } from "@/hooks/use-toast";
 import { SiOpenai, SiMeta, SiGoogle, SiNvidia } from "react-icons/si";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -618,22 +619,44 @@ function SourceActivityPanel() {
 // ─── Main Dashboard ──────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [selectedCategory, setSelectedCategory] = useState<Category>("all");
-  const [selectedSource, setSelectedSource] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  // Initialize state from URL params (enables bookmarkable/shareable views)
+  const initParams = new URLSearchParams(window.location.search);
+  const [selectedCategory, setSelectedCategory] = useState<Category>(
+    (initParams.get("category") as Category) || "all",
+  );
+  const [selectedSource, setSelectedSource] = useState<string>(
+    initParams.get("source") || "all",
+  );
+  const [searchQuery, setSearchQuery] = useState(initParams.get("search") || "");
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [newSignals, setNewSignals] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => notifications.isEnabled(),
   );
   const [sortMode, setSortMode] = useState<"time" | "priority">(
-    () => (localStorage.getItem("ai-noc-sort") as "time" | "priority") || "time",
+    (initParams.get("sort") as "time" | "priority") ||
+      (localStorage.getItem("ai-noc-sort") as "time" | "priority") ||
+      "time",
   );
+  const [savingWatchlist, setSavingWatchlist] = useState(false);
+  const [watchlistName, setWatchlistName] = useState("");
 
   const debouncedSearch = useDebounce(searchQuery, 300);
+  const { toast } = useToast();
 
   // Infinite scroll sentinel
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Sync filter state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (selectedCategory !== "all") params.set("category", selectedCategory);
+    if (selectedSource !== "all") params.set("source", selectedSource);
+    if (searchQuery) params.set("search", searchQuery);
+    if (sortMode !== "time") params.set("sort", sortMode);
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [selectedCategory, selectedSource, searchQuery, sortMode]);
 
   // Persist sort preference
   useEffect(() => {
@@ -770,6 +793,9 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
     },
+    onError: () => {
+      toast({ title: "SYNC FAILED", description: "Could not refresh feeds. Try again.", variant: "destructive" });
+    },
   });
 
   const bookmarkMutation = useMutation({
@@ -790,7 +816,66 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
+    onError: () => {
+      toast({ title: "BOOKMARK FAILED", description: "Could not save bookmark. Try again.", variant: "destructive" });
+    },
   });
+
+  // ── Watchlists ──
+
+  const { data: watchlistsData = [] } = useQuery<any[]>({
+    queryKey: ["/api/watchlists"],
+  });
+
+  const createWatchlistMutation = useMutation({
+    mutationFn: async (body: { name: string; category?: string; source?: string; search?: string; sort?: string }) => {
+      const res = await apiRequest("POST", "/api/watchlists", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+      setSavingWatchlist(false);
+      setWatchlistName("");
+      toast({ title: "WATCHLIST SAVED", description: "View saved to watchlists." });
+    },
+    onError: () => {
+      toast({ title: "SAVE FAILED", description: "Could not save watchlist.", variant: "destructive" });
+    },
+  });
+
+  const deleteWatchlistMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/watchlists/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+    },
+  });
+
+  const hasActiveFilters =
+    selectedCategory !== "all" ||
+    selectedSource !== "all" ||
+    searchQuery !== "" ||
+    sortMode !== "time";
+
+  const handleSaveWatchlist = () => {
+    if (!watchlistName.trim()) return;
+    createWatchlistMutation.mutate({
+      name: watchlistName.trim(),
+      category: selectedCategory !== "all" ? selectedCategory : undefined,
+      source: selectedSource !== "all" ? selectedSource : undefined,
+      search: searchQuery || undefined,
+      sort: sortMode !== "time" ? sortMode : undefined,
+    });
+  };
+
+  const handleApplyWatchlist = (wl: any) => {
+    setSelectedCategory(wl.category || "all");
+    setSelectedSource(wl.source || "all");
+    setSearchQuery(wl.search || "");
+    setSortMode(wl.sort || "time");
+    setShowBookmarks(false);
+  };
 
   // ── Derived ──
 
@@ -1018,6 +1103,34 @@ export default function Dashboard() {
                 );
               })}
           </div>
+
+          {/* Watchlists */}
+          {watchlistsData.length > 0 && (
+            <div className="p-3 border-t border-border/20">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-2 px-2 data-readout">
+                WATCHLISTS
+              </div>
+              {watchlistsData.map((wl: any) => (
+                <div
+                  key={wl.id}
+                  className="group flex items-center gap-1 px-2 py-1.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-card/50 cursor-pointer transition-all"
+                >
+                  <button
+                    onClick={() => handleApplyWatchlist(wl)}
+                    className="flex-1 text-left truncate"
+                  >
+                    {wl.name}
+                  </button>
+                  <button
+                    onClick={() => deleteWatchlistMutation.mutate(wl.id)}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </nav>
 
         {/* ─── Center Feed ─── */}
@@ -1097,6 +1210,40 @@ export default function Dashboard() {
                 <ArrowUpDown size={10} />
                 {sortMode === "priority" ? "PRIORITY" : "LATEST"}
               </button>
+              {hasActiveFilters && !savingWatchlist && (
+                <button
+                  onClick={() => setSavingWatchlist(true)}
+                  className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-primary/20 text-primary/60 hover:text-primary hover:bg-primary/10 data-readout transition-colors"
+                >
+                  <Bookmark size={10} />
+                  SAVE VIEW
+                </button>
+              )}
+              {savingWatchlist && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    placeholder="Watchlist name..."
+                    value={watchlistName}
+                    onChange={(e) => setWatchlistName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveWatchlist()}
+                    className="text-[10px] px-2 py-1 rounded border border-primary/30 bg-card/30 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 data-readout w-32"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveWatchlist}
+                    className="text-[10px] px-2 py-1 rounded bg-primary/20 text-primary data-readout hover:bg-primary/30"
+                  >
+                    SAVE
+                  </button>
+                  <button
+                    onClick={() => { setSavingWatchlist(false); setWatchlistName(""); }}
+                    className="text-muted-foreground/40 hover:text-foreground"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              )}
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground/40 data-readout">
                 <Filter size={10} />
                 <span>{feedItems.length} signals</span>

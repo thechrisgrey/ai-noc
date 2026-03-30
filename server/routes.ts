@@ -73,14 +73,26 @@ export async function registerRoutes(
       .catch(err => console.error("[Routes] Periodic feed fetch failed:", err.message));
   }, 2 * 60 * 1000);
 
-  // Health check for ALB
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      uptime: process.uptime(),
-      lastRefreshed,
-      timestamp: new Date().toISOString(),
-    });
+  // Health check for ALB (includes DB connectivity)
+  app.get("/api/health", async (_req, res) => {
+    try {
+      await storage.getStats(); // lightweight DB ping
+      res.json({
+        status: "ok",
+        db: "ok",
+        uptime: process.uptime(),
+        lastRefreshed,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      res.status(503).json({
+        status: "degraded",
+        db: "unreachable",
+        uptime: process.uptime(),
+        lastRefreshed,
+        timestamp: new Date().toISOString(),
+      });
+    }
   });
 
   // Get feed items with optional filters + cursor pagination
@@ -96,13 +108,14 @@ export async function registerRoutes(
         sort: (sort as "time" | "priority") || "time",
       });
 
-      // Check bookmark status for each item
-      const itemsWithBookmarks = await Promise.all(
-        result.items.map(async (item) => ({
-          ...item,
-          isBookmarked: await storage.isBookmarked(item.id),
-        }))
+      // Batch bookmark check (1 query instead of N)
+      const bookmarkedIds = await storage.getBookmarkedIds(
+        result.items.map((i) => i.id),
       );
+      const itemsWithBookmarks = result.items.map((item) => ({
+        ...item,
+        isBookmarked: bookmarkedIds.has(item.id),
+      }));
 
       res.json({ items: itemsWithBookmarks, nextCursor: result.nextCursor });
     } catch (err) {
@@ -159,6 +172,46 @@ export async function registerRoutes(
       res.json({ health, summary });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source health" });
+    }
+  });
+
+  // Watchlist operations
+  app.get("/api/watchlists", async (_req, res) => {
+    try {
+      const wl = await storage.getWatchlists();
+      res.json(wl);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch watchlists" });
+    }
+  });
+
+  app.post("/api/watchlists", async (req, res) => {
+    try {
+      const { name, category, source, search, sort } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      const wl = await storage.createWatchlist({
+        name: name.trim(),
+        category: category || null,
+        source: source || null,
+        search: search || null,
+        sort: sort || null,
+        createdAt: new Date().toISOString(),
+      });
+      res.json(wl);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create watchlist" });
+    }
+  });
+
+  app.delete("/api/watchlists/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteWatchlist(id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete watchlist" });
     }
   });
 

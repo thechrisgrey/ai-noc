@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { storage } from "./storage";
@@ -23,10 +24,15 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-// CORS for cross-origin API access (Amplify frontend -> ALB backend)
+// CORS — restricted to known origins
+const ALLOWED_ORIGINS = (
+  process.env.CORS_ORIGINS ||
+  "https://main.d22gnzk10dja9z.amplifyapp.com,https://d289ng5gobnp4e.cloudfront.net,http://localhost:3456,http://localhost:5000"
+).split(",");
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -37,6 +43,26 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+});
+
+const refreshLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Refresh rate limited. Try again in a minute." },
+});
+
+app.use("/api", apiLimiter);
+app.use("/api/feed/refresh", refreshLimiter);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

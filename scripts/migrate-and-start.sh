@@ -44,6 +44,16 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS idx_is_breaking ON feed_items(is_breaking);
       CREATE INDEX IF NOT EXISTS idx_cluster_id ON feed_items(cluster_id);
       CREATE INDEX IF NOT EXISTS idx_priority ON feed_items(priority);
+
+      CREATE TABLE IF NOT EXISTS watchlists (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT,
+        source TEXT,
+        search TEXT,
+        sort TEXT,
+        created_at TEXT NOT NULL
+      );
     \`);
     console.log('Schema applied successfully');
   } finally {

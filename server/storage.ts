@@ -1,4 +1,4 @@
-import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, feedItems, bookmarks } from "@shared/schema";
+import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, feedItems, bookmarks, watchlists } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, desc, like, or, and, lt, count, sql, inArray } from "drizzle-orm";
@@ -62,7 +62,11 @@ export interface IStorage {
   updatePriority(id: number, priority: number): Promise<void>;
   updateIsBreaking(id: number, isBreaking: boolean): Promise<void>;
   getItemsByIds(ids: number[]): Promise<FeedItem[]>;
+  getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
   getSourceActivity(days: number): Promise<Record<string, number[]>>;
+  getWatchlists(): Promise<Watchlist[]>;
+  createWatchlist(w: InsertWatchlist): Promise<Watchlist>;
+  deleteWatchlist(id: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -224,6 +228,15 @@ export class DatabaseStorage implements IStorage {
       .where(inArray(feedItems.id, ids));
   }
 
+  async getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>> {
+    if (feedItemIds.length === 0) return new Set();
+    const rows = await db
+      .select({ feedItemId: bookmarks.feedItemId })
+      .from(bookmarks)
+      .where(inArray(bookmarks.feedItemId, feedItemIds));
+    return new Set(rows.map((r) => r.feedItemId));
+  }
+
   async getSourceActivity(days: number): Promise<Record<string, number[]>> {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const totalHours = days * 24;
@@ -264,6 +277,19 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  async getWatchlists(): Promise<Watchlist[]> {
+    return await db.select().from(watchlists).orderBy(desc(watchlists.createdAt));
+  }
+
+  async createWatchlist(w: InsertWatchlist): Promise<Watchlist> {
+    const rows = await db.insert(watchlists).values(w).returning();
+    return rows[0];
+  }
+
+  async deleteWatchlist(id: number): Promise<void> {
+    await db.delete(watchlists).where(eq(watchlists.id, id));
   }
 
   async close(): Promise<void> {

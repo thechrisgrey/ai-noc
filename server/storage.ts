@@ -1,7 +1,7 @@
 import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, feedItems, bookmarks } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, desc, like, or, and, lt, count, sql } from "drizzle-orm";
+import { eq, desc, like, or, and, lt, count, sql, inArray } from "drizzle-orm";
 
 function buildConnectionString(): string {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -61,6 +61,8 @@ export interface IStorage {
   updateClusterId(id: number, clusterId: string): Promise<void>;
   updatePriority(id: number, priority: number): Promise<void>;
   updateIsBreaking(id: number, isBreaking: boolean): Promise<void>;
+  getItemsByIds(ids: number[]): Promise<FeedItem[]>;
+  getSourceActivity(days: number): Promise<Record<string, number[]>>;
   close(): Promise<void>;
 }
 
@@ -212,6 +214,56 @@ export class DatabaseStorage implements IStorage {
 
   async updateIsBreaking(id: number, isBreaking: boolean): Promise<void> {
     await db.update(feedItems).set({ isBreaking }).where(eq(feedItems.id, id));
+  }
+
+  async getItemsByIds(ids: number[]): Promise<FeedItem[]> {
+    if (ids.length === 0) return [];
+    return await db
+      .select()
+      .from(feedItems)
+      .where(inArray(feedItems.id, ids));
+  }
+
+  async getSourceActivity(days: number): Promise<Record<string, number[]>> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const totalHours = days * 24;
+
+    const rows = await db.execute(
+      sql`SELECT ${feedItems.source} as source,
+            date_trunc('hour', ${feedItems.publishedAt}::timestamp) as hour,
+            COUNT(*)::int as count
+          FROM ${feedItems}
+          WHERE ${feedItems.publishedAt} > ${cutoff}
+          GROUP BY ${feedItems.source}, hour
+          ORDER BY hour`
+    );
+
+    // Build a map of source -> hour -> count
+    const sourceHourMap: Record<string, Record<string, number>> = {};
+    for (const row of rows.rows as any[]) {
+      const source = row.source as string;
+      const hour = new Date(row.hour as string).toISOString();
+      const cnt = Number(row.count);
+      if (!sourceHourMap[source]) sourceHourMap[source] = {};
+      sourceHourMap[source][hour] = cnt;
+    }
+
+    // Generate all hour buckets
+    const startHour = new Date(cutoff);
+    startHour.setMinutes(0, 0, 0);
+    const buckets: string[] = [];
+    for (let i = 0; i < totalHours; i++) {
+      const h = new Date(startHour.getTime() + i * 60 * 60 * 1000);
+      buckets.push(h.toISOString());
+    }
+
+    // Pad each source with zeros for missing hours
+    const result: Record<string, number[]> = {};
+    for (const source of Object.keys(sourceHourMap)) {
+      result[source] = buckets.map((b) => sourceHourMap[source][b] || 0);
+    }
+
+    return result;
   }
 
   async close(): Promise<void> {

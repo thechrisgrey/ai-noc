@@ -7,8 +7,10 @@ import {
   Search, RefreshCw, Bookmark, BookmarkCheck, ExternalLink,
   Cpu, Brain, Zap, Shield, DollarSign, Package,
   Radio, Activity, AlertTriangle, Clock, Filter, X,
-  TrendingUp, ArrowUpDown,
+  TrendingUp, ArrowUpDown, Bell, BellOff,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
+import * as notifications from "@/lib/notifications";
 import { SiOpenai, SiMeta, SiGoogle, SiNvidia } from "react-icons/si";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -448,45 +450,166 @@ function BreakingAlerts({ items }: { items: FeedItemWithBookmark[] }) {
   );
 }
 
-function SourceRanking({ stats }: { stats?: Stats }) {
-  const entries = Object.entries(stats?.bySource || {})
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
-  const maxSrc = Math.max(...entries.map(([, c]) => c), 1);
+function Sparkline({
+  data,
+  color,
+  width = 120,
+  height = 24,
+}: {
+  data: number[];
+  color: string;
+  width?: number;
+  height?: number;
+}) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data, 1);
+  const points = data
+    .map((v, i) => {
+      const x = (i / Math.max(data.length - 1, 1)) * width;
+      const y = height - (v / max) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ opacity: 0.6 }}
+      />
+    </svg>
+  );
+}
+
+function FeedHealthBanner() {
+  const [expanded, setExpanded] = useState(false);
+  const { data } = useQuery<{
+    health: Record<string, any>;
+    summary: { online: number; failing: number; total: number };
+  }>({
+    queryKey: ["/api/sources/health"],
+    refetchInterval: 60000,
+  });
+
+  const summary = data?.summary;
+  const health = data?.health;
+
+  if (!summary || summary.total === 0) return null;
+
+  const failingEntries = health
+    ? Object.values(health).filter((h: any) => h.consecutiveFailures > 0)
+    : [];
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 text-[10px] uppercase tracking-wider data-readout"
+      >
+        <span
+          className={`w-2 h-2 rounded-full ${summary.failing > 0 ? "bg-amber-400" : "bg-green-400"}`}
+        />
+        <span className="text-muted-foreground/70">
+          {summary.online}/{summary.total} SOURCES ONLINE
+        </span>
+        {summary.failing > 0 && (
+          <span className="text-red-400 font-semibold ml-1">
+            {summary.failing} FAILING
+          </span>
+        )}
+        <span className="ml-auto text-muted-foreground/30">
+          {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        </span>
+      </button>
+      {expanded && failingEntries.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {failingEntries.map((h: any) => (
+            <div
+              key={h.source}
+              className="text-[9px] px-2 py-1.5 rounded bg-red-950/20 border border-red-500/15"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                <span className="text-red-400/80 font-medium">
+                  {getSourceMeta(h.source).label}
+                </span>
+                <span className="ml-auto text-muted-foreground/30">
+                  {h.consecutiveFailures}x
+                </span>
+              </div>
+              {h.lastError && (
+                <p className="text-muted-foreground/40 mt-0.5 truncate">
+                  {h.lastError}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceActivityPanel() {
+  const { data: activity } = useQuery<Record<string, number[]>>({
+    queryKey: ["/api/sources/activity"],
+    refetchInterval: 120000,
+  });
+
+  const entries = Object.entries(activity || {})
+    .map(([source, data]) => ({
+      source,
+      data,
+      total: data.reduce((s, v) => s + v, 0),
+      lastActive: data.length > 0
+        ? data.length - 1 - [...data].reverse().findIndex((v) => v > 0)
+        : -1,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 12);
+
+  const now = Date.now();
 
   return (
     <div>
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-2.5 data-readout">
-        TOP SOURCES
+        SOURCE ACTIVITY (7D)
       </div>
-      <div className="space-y-1.5">
-        {entries.map(([source, count]) => {
+      <div className="space-y-2">
+        {entries.map(({ source, data, total, lastActive }) => {
           const info = getSourceMeta(source);
-          const pct = (count / maxSrc) * 100;
+          const totalHours = data.length;
+          const hoursAgo = totalHours > 0 && lastActive >= 0 ? totalHours - 1 - lastActive : Infinity;
+          let dotColor = "bg-red-400";
+          if (hoursAgo < 24) dotColor = "bg-green-400";
+          else if (hoursAgo < 72) dotColor = "bg-amber-400";
+
           return (
             <div key={source} className="flex items-center gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
               <span
                 className="text-[9px] w-16 truncate data-readout"
                 style={{ color: info.color }}
               >
                 {info.label}
               </span>
-              <div className="flex-1 h-1 bg-border/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${pct}%`,
-                    backgroundColor: info.color,
-                    opacity: 0.4,
-                  }}
-                />
-              </div>
-              <span className="text-[9px] data-readout text-muted-foreground/30 w-4 text-right">
-                {count}
+              <Sparkline data={data} color={info.color} />
+              <span className="text-[9px] data-readout text-muted-foreground/30 w-5 text-right">
+                {total}
               </span>
             </div>
           );
         })}
+        {entries.length === 0 && (
+          <div className="text-[9px] text-muted-foreground/30 data-readout py-2">
+            No activity data yet
+          </div>
+        )}
       </div>
     </div>
   );
@@ -500,6 +623,9 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [newSignals, setNewSignals] = useState(0);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    () => notifications.isEnabled(),
+  );
   const [sortMode, setSortMode] = useState<"time" | "priority">(
     () => (localStorage.getItem("ai-noc-sort") as "time" | "priority") || "time",
   );
@@ -536,6 +662,21 @@ export default function Dashboard() {
             const data = JSON.parse(event.data);
             if (data.type === "new_items" && data.count > 0) {
               setNewSignals((prev) => prev + data.count);
+            }
+            if (data.type === "alert" && Array.isArray(data.items)) {
+              if (notifications.isEnabled() && document.hidden) {
+                for (const item of data.items) {
+                  notifications.sendNotification(
+                    `[P${item.priority}] ${item.sourceLabel}`,
+                    item.title,
+                    () => {
+                      window.focus();
+                      queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+                    },
+                  );
+                }
+              }
             }
           } catch {}
         };
@@ -746,6 +887,25 @@ export default function Dashboard() {
               <Bookmark size={12} />
               <span className="hidden sm:inline">SAVED</span>
               <span className="data-readout">({bookmarksList.length})</span>
+            </button>
+            <button
+              onClick={async () => {
+                if (!notificationsEnabled) {
+                  const granted = await notifications.requestPermission();
+                  setNotificationsEnabled(granted);
+                } else {
+                  notifications.setEnabled(false);
+                  setNotificationsEnabled(false);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border transition-colors data-readout ${
+                notificationsEnabled
+                  ? "border-primary/30 text-primary bg-primary/10"
+                  : "border-border/50 text-muted-foreground hover:text-foreground"
+              }`}
+              title={notificationsEnabled ? "Disable notifications" : "Enable notifications"}
+            >
+              {notificationsEnabled ? <Bell size={12} /> : <BellOff size={12} />}
             </button>
           </div>
         </div>
@@ -1161,7 +1321,10 @@ export default function Dashboard() {
             <BreakingAlerts items={feedItems} />
 
             <div className="h-px bg-border/10" />
-            <SourceRanking stats={stats} />
+            <FeedHealthBanner />
+
+            <div className="h-px bg-border/10" />
+            <SourceActivityPanel />
           </div>
         </aside>
       </div>

@@ -2,6 +2,7 @@ import RssParser from "rss-parser";
 import { storage } from "./storage";
 import { clusterRecentItems } from "./clustering";
 import { recomputePriorities } from "./priority";
+import { recordSuccess, recordFailure } from "./feedHealth";
 import type { InsertFeedItem } from "@shared/schema";
 
 const parser = new RssParser({
@@ -139,16 +140,19 @@ async function fetchFeed(source: FeedSource): Promise<InsertFeedItem[]> {
       });
     }
 
+    recordSuccess(source.source);
     return items;
   } catch (error) {
+    recordFailure(source.source, (error as Error).message);
     console.error(`Failed to fetch feed from ${source.sourceLabel}:`, (error as Error).message);
     return [];
   }
 }
 
-export async function fetchAllFeeds(): Promise<number> {
+export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemIds: number[] }> {
   console.log(`[FeedEngine] Fetching ${FEED_SOURCES.length} feeds...`);
   let newItemCount = 0;
+  const newItemIds: number[] = [];
 
   const results = await Promise.allSettled(
     FEED_SOURCES.map(source => fetchFeed(source))
@@ -160,8 +164,9 @@ export async function fetchAllFeeds(): Promise<number> {
         try {
           const exists = await storage.feedItemExists(item.guid);
           if (!exists) {
-            await storage.createFeedItem(item);
+            const created = await storage.createFeedItem(item);
             newItemCount++;
+            newItemIds.push(created.id);
           }
         } catch (err) {
           // Duplicate guid, skip
@@ -182,7 +187,7 @@ export async function fetchAllFeeds(): Promise<number> {
     }
   }
 
-  return newItemCount;
+  return { newItemCount, newItemIds };
 }
 
 // Seed with synthetic data if DB is empty for demo purposes

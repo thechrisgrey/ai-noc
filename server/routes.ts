@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { fetchAllFeeds, seedDemoData } from "./feedEngine";
+import { getHealthMap, getHealthSummary } from "./feedHealth";
 
 let lastRefreshed: string | null = null;
 
@@ -38,18 +39,36 @@ export async function registerRoutes(
 
   // Try fetching real feeds in background (don't block startup)
   fetchAllFeeds()
-    .then((newCount) => {
+    .then(async ({ newItemCount, newItemIds }) => {
       lastRefreshed = new Date().toISOString();
-      if (newCount > 0) broadcast({ type: "new_items", count: newCount, timestamp: lastRefreshed });
+      if (newItemCount > 0) {
+        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
+        const newItems = await storage.getItemsByIds(newItemIds);
+        const highPriority = newItems
+          .filter((item) => (item.priority ?? 0) >= 80)
+          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
+        if (highPriority.length > 0) {
+          broadcast({ type: "alert", items: highPriority });
+        }
+      }
     })
     .catch(err => console.error("[Routes] Initial feed fetch failed:", err.message));
 
   // Poll feeds every 2 minutes for near-real-time coverage
   setInterval(() => {
     fetchAllFeeds()
-      .then((newCount) => {
+      .then(async ({ newItemCount, newItemIds }) => {
         lastRefreshed = new Date().toISOString();
-        if (newCount > 0) broadcast({ type: "new_items", count: newCount, timestamp: lastRefreshed });
+        if (newItemCount > 0) {
+          broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
+          const newItems = await storage.getItemsByIds(newItemIds);
+          const highPriority = newItems
+            .filter((item) => (item.priority ?? 0) >= 80)
+            .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
+          if (highPriority.length > 0) {
+            broadcast({ type: "alert", items: highPriority });
+          }
+        }
       })
       .catch(err => console.error("[Routes] Periodic feed fetch failed:", err.message));
   }, 2 * 60 * 1000);
@@ -104,12 +123,42 @@ export async function registerRoutes(
   // Trigger manual feed refresh
   app.post("/api/feed/refresh", async (_req, res) => {
     try {
-      const newCount = await fetchAllFeeds();
+      const { newItemCount, newItemIds } = await fetchAllFeeds();
       lastRefreshed = new Date().toISOString();
-      if (newCount > 0) broadcast({ type: "new_items", count: newCount, timestamp: lastRefreshed });
-      res.json({ newItems: newCount, lastRefreshed });
+      if (newItemCount > 0) {
+        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
+        const newItems = await storage.getItemsByIds(newItemIds);
+        const highPriority = newItems
+          .filter((item) => (item.priority ?? 0) >= 80)
+          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
+        if (highPriority.length > 0) {
+          broadcast({ type: "alert", items: highPriority });
+        }
+      }
+      res.json({ newItems: newItemCount, lastRefreshed });
     } catch (err) {
       res.status(500).json({ error: "Failed to refresh feeds" });
+    }
+  });
+
+  // Source activity (sparkline data over last 7 days)
+  app.get("/api/sources/activity", async (_req, res) => {
+    try {
+      const activity = await storage.getSourceActivity(7);
+      res.json(activity);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch source activity" });
+    }
+  });
+
+  // Source health
+  app.get("/api/sources/health", async (_req, res) => {
+    try {
+      const health = getHealthMap();
+      const summary = getHealthSummary();
+      res.json({ health, summary });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch source health" });
     }
   });
 

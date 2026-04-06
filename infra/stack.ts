@@ -140,7 +140,10 @@ export class AiNocStack extends cdk.Stack {
     taskDef.addToTaskRolePolicy(
       new iam.PolicyStatement({
         actions: ["bedrock:InvokeModel"],
-        resources: ["arn:aws:bedrock:us-east-1::foundation-model/anthropic.*"],
+        resources: [
+          "arn:aws:bedrock:us-east-1::foundation-model/anthropic.*",
+          "arn:aws:bedrock:us-east-1:205930636302:inference-profile/us.anthropic.*",
+        ],
       }),
     );
 

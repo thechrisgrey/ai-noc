@@ -7,7 +7,7 @@ import { storage } from "./storage";
 const BEDROCK_REGION = process.env.BEDROCK_REGION || "us-east-1";
 const MODEL_ID =
   process.env.BEDROCK_MODEL_ID ||
-  "anthropic.claude-haiku-4-5-20251001-v1:0";
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 const bedrock = new BedrockRuntimeClient({ region: BEDROCK_REGION });
 

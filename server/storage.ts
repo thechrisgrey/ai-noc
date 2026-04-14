@@ -1,7 +1,12 @@
 import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, desc, like, or, and, lt, count, sql, inArray } from "drizzle-orm";
+import { eq, desc, ilike, or, and, lt, count, sql, inArray } from "drizzle-orm";
+
+/** Escape LIKE-special characters so they are treated as literals */
+function escapeLike(str: string): string {
+  return str.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 
 function buildConnectionString(): string {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -94,10 +99,11 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(feedItems.source, source));
     }
     if (search) {
+      const escaped = escapeLike(search);
       conditions.push(
         or(
-          like(feedItems.title, `%${search}%`),
-          like(feedItems.description, `%${search}%`),
+          ilike(feedItems.title, `%${escaped}%`),
+          ilike(feedItems.description, `%${escaped}%`),
         ),
       );
     }

@@ -106,13 +106,22 @@ export async function registerRoutes(
   app.get("/api/feed", async (req, res) => {
     try {
       const { limit, cursor, category, source, search, sort } = req.query;
+
+      // Validate & sanitize inputs
+      const validCategories = ["all", "model_release", "research", "funding", "product", "policy", "infrastructure"];
+      const safeLimit = Math.max(1, Math.min(parseInt(limit as string) || 30, 100));
+      const safeCategory = validCategories.includes(category as string) ? (category as string) : undefined;
+      const safeSort = sort === "priority" ? "priority" as const : "time" as const;
+      const safeSource = typeof source === "string" && /^[a-z0-9_]+$/.test(source) ? source : undefined;
+      const safeSearch = typeof search === "string" ? search.trim().slice(0, 200) || undefined : undefined;
+
       const result = await storage.getFeedItems({
-        limit: limit ? parseInt(limit as string) : 30,
+        limit: safeLimit,
         cursor: cursor as string | undefined,
-        category: category as string | undefined,
-        source: source as string | undefined,
-        search: search as string | undefined,
-        sort: (sort as "time" | "priority") || "time",
+        category: safeCategory,
+        source: safeSource,
+        search: safeSearch,
+        sort: safeSort,
       });
 
       // Batch bookmark check (1 query instead of N)

@@ -518,3 +518,7 @@ export async function seedDemoData(): Promise<void> {
 
   console.log(`[FeedEngine] Seeded ${demoItems.length} demo items`);
 }
+
+// Exposed for unit tests only — keep prefix so intent is explicit.
+export const __testing__categorizeItem = categorizeItem;
+export const __testing__isBreakingNews = isBreakingNews;

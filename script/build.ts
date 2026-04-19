@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, cp } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -40,19 +40,32 @@ async function buildAll() {
     ...forceExternal,
   ];
 
-  await esbuild({
-    entryPoints: ["server/index.ts"],
-    platform: "node",
+  const commonEsbuildOptions = {
+    platform: "node" as const,
     bundle: true,
-    format: "cjs",
-    outfile: "dist/index.cjs",
+    format: "cjs" as const,
     define: {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
     external: externals,
-    logLevel: "info",
+    logLevel: "info" as const,
+  };
+
+  await esbuild({
+    ...commonEsbuildOptions,
+    entryPoints: ["server/index.ts"],
+    outfile: "dist/index.cjs",
   });
+
+  await esbuild({
+    ...commonEsbuildOptions,
+    entryPoints: ["server/migrate.ts"],
+    outfile: "dist/migrate.cjs",
+  });
+
+  console.log("copying migrations/ to dist/migrations/...");
+  await cp("migrations", "dist/migrations", { recursive: true });
 }
 
 buildAll().catch((err) => {

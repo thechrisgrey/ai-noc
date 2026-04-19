@@ -1,5 +1,5 @@
 import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, desc, ilike, or, and, lt, count, sql, inArray } from "drizzle-orm";
 
@@ -19,21 +19,6 @@ function buildConnectionString(): string {
 }
 
 const isAws = !!(process.env.DB_HOST || process.env.DATABASE_URL?.includes("rds.amazonaws.com"));
-
-const pool = new Pool({
-  connectionString: buildConnectionString(),
-  max: 10,
-  connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
-  ssl: isAws ? { rejectUnauthorized: false } : false,
-});
-
-// Log connection errors instead of crashing
-pool.on("error", (err) => {
-  console.error("[DB] Pool error:", err.message);
-});
-
-export const db = drizzle(pool);
 
 export interface PaginatedFeed {
   items: FeedItem[];
@@ -66,6 +51,8 @@ export interface IStorage {
   updateClusterId(id: number, clusterId: string): Promise<void>;
   updatePriority(id: number, priority: number): Promise<void>;
   updateIsBreaking(id: number, isBreaking: boolean): Promise<void>;
+  bulkUpdatePriorities(rows: { id: number; priority: number; isBreaking: boolean }[]): Promise<void>;
+  bulkUpdateClusterIds(rows: { id: number; clusterId: string }[]): Promise<void>;
   getItemsByIds(ids: number[]): Promise<FeedItem[]>;
   getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
   getSourceActivity(days: number): Promise<Record<string, number[]>>;
@@ -77,7 +64,20 @@ export interface IStorage {
   close(): Promise<void>;
 }
 
+/**
+ * DatabaseStorage accepts any drizzle PG database instance. This enables:
+ *   - Production: node-postgres Pool
+ *   - Tests: PGlite via drizzle-orm/pglite (shares same query API)
+ */
+// biome-ignore lint/suspicious/noExplicitAny: drizzle's generic db type is complex; tests pass either NodePg or PGlite-backed clients
+type AnyPgDb = NodePgDatabase<any> | any;
+
 export class DatabaseStorage implements IStorage {
+  constructor(
+    private readonly db: AnyPgDb,
+    private readonly onClose?: () => Promise<void>,
+  ) {}
+
   async getFeedItems(opts: {
     limit?: number;
     cursor?: string;
@@ -113,7 +113,7 @@ export class DatabaseStorage implements IStorage {
         ? [desc(feedItems.priority), desc(feedItems.publishedAt)]
         : [desc(feedItems.publishedAt)];
 
-    const query = db.select().from(feedItems);
+    const query = this.db.select().from(feedItems);
     const items =
       conditions.length > 0
         ? await query.where(and(...conditions)).orderBy(...orderBy).limit(limit)
@@ -126,17 +126,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeedItemById(id: number): Promise<FeedItem | undefined> {
-    const rows = await db.select().from(feedItems).where(eq(feedItems.id, id)).limit(1);
+    const rows = await this.db.select().from(feedItems).where(eq(feedItems.id, id)).limit(1);
     return rows[0];
   }
 
   async createFeedItem(item: InsertFeedItem): Promise<FeedItem> {
-    const rows = await db.insert(feedItems).values(item).returning();
+    const rows = await this.db.insert(feedItems).values(item).returning();
     return rows[0];
   }
 
   async feedItemExists(guid: string): Promise<boolean> {
-    const rows = await db
+    const rows = await this.db
       .select({ id: feedItems.id })
       .from(feedItems)
       .where(eq(feedItems.guid, guid))
@@ -145,29 +145,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookmarks(): Promise<(Bookmark & { feedItem?: FeedItem })[]> {
-    const rows = await db
+    const rows = await this.db
       .select()
       .from(bookmarks)
       .leftJoin(feedItems, eq(bookmarks.feedItemId, feedItems.id))
       .orderBy(desc(bookmarks.createdAt));
 
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       ...row.bookmarks,
       feedItem: row.feed_items ?? undefined,
     }));
   }
 
   async createBookmark(bookmark: InsertBookmark): Promise<Bookmark> {
-    const rows = await db.insert(bookmarks).values(bookmark).returning();
+    const rows = await this.db.insert(bookmarks).values(bookmark).returning();
     return rows[0];
   }
 
   async deleteBookmark(feedItemId: number): Promise<void> {
-    await db.delete(bookmarks).where(eq(bookmarks.feedItemId, feedItemId));
+    await this.db.delete(bookmarks).where(eq(bookmarks.feedItemId, feedItemId));
   }
 
   async isBookmarked(feedItemId: number): Promise<boolean> {
-    const rows = await db
+    const rows = await this.db
       .select({ id: bookmarks.id })
       .from(bookmarks)
       .where(eq(bookmarks.feedItemId, feedItemId))
@@ -181,24 +181,24 @@ export class DatabaseStorage implements IStorage {
     bySource: Record<string, number>;
     breakingCount: number;
   }> {
-    const [totalRow] = await db.select({ value: count() }).from(feedItems);
+    const [totalRow] = await this.db.select({ value: count() }).from(feedItems);
     const total = totalRow.value;
 
-    const catRows = await db
+    const catRows = await this.db
       .select({ category: feedItems.category, value: count() })
       .from(feedItems)
       .groupBy(feedItems.category);
     const byCategory: Record<string, number> = {};
     for (const r of catRows) byCategory[r.category] = r.value;
 
-    const srcRows = await db
+    const srcRows = await this.db
       .select({ source: feedItems.source, value: count() })
       .from(feedItems)
       .groupBy(feedItems.source);
     const bySource: Record<string, number> = {};
     for (const r of srcRows) bySource[r.source] = r.value;
 
-    const [breakingRow] = await db
+    const [breakingRow] = await this.db
       .select({ value: count() })
       .from(feedItems)
       .where(eq(feedItems.isBreaking, true));
@@ -209,7 +209,7 @@ export class DatabaseStorage implements IStorage {
 
   async getRecentItems(hours: number): Promise<FeedItem[]> {
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-    return await db
+    return await this.db
       .select()
       .from(feedItems)
       .where(sql`${feedItems.publishedAt} >= ${cutoff}`)
@@ -217,20 +217,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateClusterId(id: number, clusterId: string): Promise<void> {
-    await db.update(feedItems).set({ clusterId }).where(eq(feedItems.id, id));
+    await this.db.update(feedItems).set({ clusterId }).where(eq(feedItems.id, id));
   }
 
   async updatePriority(id: number, priority: number): Promise<void> {
-    await db.update(feedItems).set({ priority }).where(eq(feedItems.id, id));
+    await this.db.update(feedItems).set({ priority }).where(eq(feedItems.id, id));
   }
 
   async updateIsBreaking(id: number, isBreaking: boolean): Promise<void> {
-    await db.update(feedItems).set({ isBreaking }).where(eq(feedItems.id, id));
+    await this.db.update(feedItems).set({ isBreaking }).where(eq(feedItems.id, id));
+  }
+
+  async bulkUpdatePriorities(
+    rows: { id: number; priority: number; isBreaking: boolean }[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const values = sql.join(
+      rows.map(
+        (r) =>
+          sql`(${r.id}::int, ${r.priority}::int, ${r.isBreaking}::boolean)`,
+      ),
+      sql`, `,
+    );
+    await this.db.execute(sql`
+      UPDATE ${feedItems} AS f
+      SET priority = v.priority, is_breaking = v.is_breaking
+      FROM (VALUES ${values}) AS v(id, priority, is_breaking)
+      WHERE f.id = v.id
+    `);
+  }
+
+  async bulkUpdateClusterIds(
+    rows: { id: number; clusterId: string }[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const values = sql.join(
+      rows.map((r) => sql`(${r.id}::int, ${r.clusterId}::text)`),
+      sql`, `,
+    );
+    await this.db.execute(sql`
+      UPDATE ${feedItems} AS f
+      SET cluster_id = v.cluster_id
+      FROM (VALUES ${values}) AS v(id, cluster_id)
+      WHERE f.id = v.id
+    `);
   }
 
   async getItemsByIds(ids: number[]): Promise<FeedItem[]> {
     if (ids.length === 0) return [];
-    return await db
+    return await this.db
       .select()
       .from(feedItems)
       .where(inArray(feedItems.id, ids));
@@ -238,18 +273,18 @@ export class DatabaseStorage implements IStorage {
 
   async getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>> {
     if (feedItemIds.length === 0) return new Set();
-    const rows = await db
+    const rows = await this.db
       .select({ feedItemId: bookmarks.feedItemId })
       .from(bookmarks)
       .where(inArray(bookmarks.feedItemId, feedItemIds));
-    return new Set(rows.map((r) => r.feedItemId));
+    return new Set(rows.map((r: { feedItemId: number }) => r.feedItemId));
   }
 
   async getSourceActivity(days: number): Promise<Record<string, number[]>> {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const totalHours = days * 24;
 
-    const rows = await db.execute(
+    const rows = await this.db.execute(
       sql`SELECT ${feedItems.source} as source,
             date_trunc('hour', ${feedItems.publishedAt}::timestamp) as hour,
             COUNT(*)::int as count
@@ -259,9 +294,10 @@ export class DatabaseStorage implements IStorage {
           ORDER BY hour`
     );
 
-    // Build a map of source -> hour -> count
+    const rawRows: any[] = (rows as any).rows ?? (rows as any);
+
     const sourceHourMap: Record<string, Record<string, number>> = {};
-    for (const row of rows.rows as any[]) {
+    for (const row of rawRows) {
       const source = row.source as string;
       const hour = new Date(row.hour as string).toISOString();
       const cnt = Number(row.count);
@@ -269,7 +305,6 @@ export class DatabaseStorage implements IStorage {
       sourceHourMap[source][hour] = cnt;
     }
 
-    // Generate all hour buckets
     const startHour = new Date(cutoff);
     startHour.setMinutes(0, 0, 0);
     const buckets: string[] = [];
@@ -278,7 +313,6 @@ export class DatabaseStorage implements IStorage {
       buckets.push(h.toISOString());
     }
 
-    // Pad each source with zeros for missing hours
     const result: Record<string, number[]> = {};
     for (const source of Object.keys(sourceHourMap)) {
       result[source] = buckets.map((b) => sourceHourMap[source][b] || 0);
@@ -288,20 +322,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWatchlists(): Promise<Watchlist[]> {
-    return await db.select().from(watchlists).orderBy(desc(watchlists.createdAt));
+    return await this.db.select().from(watchlists).orderBy(desc(watchlists.createdAt));
   }
 
   async createWatchlist(w: InsertWatchlist): Promise<Watchlist> {
-    const rows = await db.insert(watchlists).values(w).returning();
+    const rows = await this.db.insert(watchlists).values(w).returning();
     return rows[0];
   }
 
   async deleteWatchlist(id: number): Promise<void> {
-    await db.delete(watchlists).where(eq(watchlists.id, id));
+    await this.db.delete(watchlists).where(eq(watchlists.id, id));
   }
 
   async getLatestBriefing(): Promise<Briefing | undefined> {
-    const rows = await db
+    const rows = await this.db
       .select()
       .from(briefings)
       .orderBy(desc(briefings.generatedAt))
@@ -310,13 +344,46 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBriefing(b: InsertBriefing): Promise<Briefing> {
-    const rows = await db.insert(briefings).values(b).returning();
+    const rows = await this.db.insert(briefings).values(b).returning();
     return rows[0];
   }
 
   async close(): Promise<void> {
-    await pool.end();
+    if (this.onClose) await this.onClose();
   }
 }
 
-export const storage = new DatabaseStorage();
+// ─── Default production storage ────────────────────────────
+// Lazily constructed so test setup can override by importing DatabaseStorage directly.
+
+let _defaultPool: Pool | null = null;
+let _defaultStorage: DatabaseStorage | null = null;
+
+function getDefaultStorage(): DatabaseStorage {
+  if (!_defaultStorage) {
+    _defaultPool = new Pool({
+      connectionString: buildConnectionString(),
+      max: 10,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+      ssl: isAws ? { rejectUnauthorized: false } : false,
+    });
+    _defaultPool.on("error", (err) => {
+      console.error("[DB] Pool error:", err.message);
+    });
+    const db = drizzle(_defaultPool);
+    _defaultStorage = new DatabaseStorage(db, async () => {
+      if (_defaultPool) await _defaultPool.end();
+    });
+  }
+  return _defaultStorage;
+}
+
+// Proxy the module export so consumers keep `import { storage } from "./storage"`.
+export const storage: IStorage = new Proxy({} as IStorage, {
+  get(_target, prop) {
+    const inst = getDefaultStorage() as any;
+    const value = inst[prop];
+    return typeof value === "function" ? value.bind(inst) : value;
+  },
+});

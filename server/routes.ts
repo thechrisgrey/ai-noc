@@ -416,7 +416,10 @@ export async function registerRoutes(
       try {
         probe = await probeFeedUrl(validated.url);
       } catch (err) {
-        return res.status(422).json({ error: (err as Error).message });
+        // Never echo the upstream/resolver error to the client — it would leak
+        // whether the URL reached an internal host (SSRF probe oracle).
+        console.error("[Sources] Feed probe failed:", (err as Error).message);
+        return res.status(422).json({ error: "Could not fetch a valid feed from that URL" });
       }
 
       const created = await storage.createSource({

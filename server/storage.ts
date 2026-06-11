@@ -1,4 +1,4 @@
-import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
+import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, type Source, type InsertSource, feedItems, bookmarks, watchlists, briefings, sources } from "@shared/schema";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, ne, desc, asc, ilike, or, and, lt, lte, gte, count, sql, inArray, isNull } from "drizzle-orm";
@@ -126,6 +126,13 @@ export interface IStorage {
   deleteWatchlist(id: number): Promise<void>;
   getLatestBriefing(): Promise<Briefing | undefined>;
   createBriefing(b: InsertBriefing): Promise<Briefing>;
+  getSources(enabledOnly?: boolean): Promise<Source[]>;
+  createSource(s: InsertSource): Promise<Source>;
+  updateSource(
+    id: number,
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+  ): Promise<Source | undefined>;
+  deleteSource(id: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -516,6 +523,38 @@ export class DatabaseStorage implements IStorage {
   async createBriefing(b: InsertBriefing): Promise<Briefing> {
     const rows = await this.db.insert(briefings).values(b).returning();
     return rows[0];
+  }
+
+  async getSources(enabledOnly = false): Promise<Source[]> {
+    const query = this.db.select().from(sources);
+    return enabledOnly
+      ? await query.where(eq(sources.enabled, true)).orderBy(asc(sources.id))
+      : await query.orderBy(asc(sources.id));
+  }
+
+  async createSource(s: InsertSource): Promise<Source> {
+    const rows = await this.db.insert(sources).values(s).returning();
+    return rows[0];
+  }
+
+  async updateSource(
+    id: number,
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+  ): Promise<Source | undefined> {
+    const set: Partial<InsertSource> = {};
+    if (patch.enabled !== undefined) set.enabled = patch.enabled;
+    if (patch.label !== undefined) set.label = patch.label;
+    if (patch.defaultCategory !== undefined) set.defaultCategory = patch.defaultCategory;
+    if (Object.keys(set).length === 0) {
+      const rows = await this.db.select().from(sources).where(eq(sources.id, id)).limit(1);
+      return rows[0];
+    }
+    const rows = await this.db.update(sources).set(set).where(eq(sources.id, id)).returning();
+    return rows[0];
+  }
+
+  async deleteSource(id: number): Promise<void> {
+    await this.db.delete(sources).where(eq(sources.id, id));
   }
 
   async close(): Promise<void> {

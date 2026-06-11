@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { CATEGORIES, type Category, type Stats } from "./constants";
 import { getSourceMeta } from "./utils";
+import { SourcesSheet } from "./SourcesSheet";
 
 interface SidebarProps {
   stats?: Stats;
@@ -68,8 +69,11 @@ export function Sidebar({
 
       {/* Sources */}
       <div className="p-3 space-y-0.5 border-t border-white/[0.06] flex-1">
-        <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-2 px-2 data-readout">
-          SOURCES
+        <div className="flex items-center justify-between mb-2 px-2">
+          <span className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground data-readout">
+            SOURCES
+          </span>
+          <SourcesSheet />
         </div>
         {Object.entries(stats?.bySource || {})
           .sort((a, b) => b[1] - a[1])

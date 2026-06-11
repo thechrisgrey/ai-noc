@@ -4,9 +4,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { timingSafeEqualStr } from "./originVerify";
 import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
-import { fetchAllFeeds, seedDemoData } from "./feedEngine";
+import { fetchAllFeeds, probeFeedUrl, seedDemoData } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
+import { validateSourceInput, SOURCE_CATEGORIES } from "./sourceValidation";
 
 let lastRefreshed: string | null = null;
 
@@ -264,6 +265,104 @@ export async function registerRoutes(
       res.json({ health, summary });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source health" });
+    }
+  });
+
+  // Source management
+  app.get("/api/sources", async (_req, res) => {
+    try {
+      const [rows, stats] = await Promise.all([storage.getSources(), storage.getStats()]);
+      const health = getHealthMap();
+      res.json(
+        rows.map((s) => ({
+          ...s,
+          itemCount: stats.bySource[s.slug] ?? 0,
+          health: health[s.slug] ?? null,
+        })),
+      );
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch sources" });
+    }
+  });
+
+  app.post("/api/sources", async (req, res) => {
+    try {
+      const existing = await storage.getSources();
+      const validated = validateSourceInput(
+        req.body ?? {},
+        existing.map((s) => s.slug),
+      );
+      if (!validated.ok) {
+        return res.status(400).json({ error: validated.error });
+      }
+      if (existing.some((s) => s.url === validated.url)) {
+        return res.status(409).json({ error: "A source with this URL already exists" });
+      }
+
+      let probe: { feedTitle: string; itemCount: number };
+      try {
+        probe = await probeFeedUrl(validated.url);
+      } catch (err) {
+        return res.status(422).json({ error: (err as Error).message });
+      }
+
+      const created = await storage.createSource({
+        slug: validated.slug,
+        label: validated.label,
+        url: validated.url,
+        defaultCategory: validated.defaultCategory,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      });
+      res.json({ ...created, feedTitle: probe.feedTitle, itemCount: probe.itemCount });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create source" });
+    }
+  });
+
+  app.patch("/api/sources/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const { enabled, label, defaultCategory } = req.body ?? {};
+      if (enabled !== undefined && typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+      if (label !== undefined && (typeof label !== "string" || !label.trim())) {
+        return res.status(400).json({ error: "label must be a non-empty string" });
+      }
+      if (defaultCategory !== undefined && !SOURCE_CATEGORIES.includes(defaultCategory)) {
+        return res
+          .status(400)
+          .json({ error: `defaultCategory must be one of: ${SOURCE_CATEGORIES.join(", ")}` });
+      }
+      const updated = await storage.updateSource(id, {
+        enabled,
+        label: typeof label === "string" ? label.trim() : undefined,
+        defaultCategory,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "Source not found" });
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update source" });
+    }
+  });
+
+  // Existing feed_items keep the deleted source's slug — intentional orphans.
+  app.delete("/api/sources/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      await storage.deleteSource(id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete source" });
     }
   });
 

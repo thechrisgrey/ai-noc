@@ -13,54 +13,13 @@ const parser = new RssParser({
   },
 });
 
-// RSS/Atom feed sources for the AI ecosystem
+// Per-cycle fetch shape, mapped from the sources table (slug -> source).
 interface FeedSource {
   url: string;
   source: string;
   sourceLabel: string;
   defaultCategory: string;
 }
-
-const FEED_SOURCES: FeedSource[] = [
-  // Major AI Labs - Blogs
-  { url: "https://openai.com/news/rss.xml", source: "openai", sourceLabel: "OpenAI", defaultCategory: "model_release" },
-  // FIXME: Anthropic publishes no official RSS/Atom feed (anthropic.com/feed.xml is 404
-  // and /news exposes no <link rel="alternate">); restore when one exists.
-  { url: "https://www.anthropic.com/feed.xml", source: "anthropic", sourceLabel: "Anthropic", defaultCategory: "research" },
-  { url: "https://blog.google/technology/ai/rss/", source: "google_ai", sourceLabel: "Google AI", defaultCategory: "product" },
-  { url: "https://about.fb.com/news/tag/ai/feed/", source: "meta_ai", sourceLabel: "Meta AI", defaultCategory: "research" },
-  { url: "https://mistral.ai/rss.xml", source: "mistral", sourceLabel: "Mistral AI", defaultCategory: "model_release" },
-
-  // Research & News Aggregators
-  { url: "https://arxiv.org/rss/cs.AI", source: "arxiv_ai", sourceLabel: "arXiv AI", defaultCategory: "research" },
-  { url: "https://arxiv.org/rss/cs.CL", source: "arxiv_nlp", sourceLabel: "arXiv NLP", defaultCategory: "research" },
-  { url: "https://arxiv.org/rss/cs.LG", source: "arxiv_ml", sourceLabel: "arXiv ML", defaultCategory: "research" },
-
-  // Tech news covering AI
-  { url: "https://techcrunch.com/category/artificial-intelligence/feed/", source: "techcrunch", sourceLabel: "TechCrunch AI", defaultCategory: "product" },
-  { url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", source: "theverge", sourceLabel: "The Verge AI", defaultCategory: "product" },
-  { url: "https://venturebeat.com/category/ai/feed/", source: "venturebeat", sourceLabel: "VentureBeat AI", defaultCategory: "product" },
-
-  // AI-specific publications
-  { url: "https://the-decoder.com/feed/", source: "the_decoder", sourceLabel: "The Decoder", defaultCategory: "product" },
-  { url: "https://www.marktechpost.com/feed/", source: "marktechpost", sourceLabel: "MarkTechPost", defaultCategory: "research" },
-
-  // Hugging Face blog
-  { url: "https://huggingface.co/blog/feed.xml", source: "huggingface", sourceLabel: "Hugging Face", defaultCategory: "model_release" },
-
-  // GitHub Release Feeds — track SDK & tool releases from key AI orgs
-  { url: "https://github.com/anthropics/anthropic-sdk-python/releases.atom", source: "anthropic_gh", sourceLabel: "Anthropic SDK", defaultCategory: "product" },
-  { url: "https://github.com/anthropics/claude-code/releases.atom", source: "anthropic_gh", sourceLabel: "Claude Code", defaultCategory: "product" },
-  { url: "https://github.com/anthropics/anthropic-sdk-typescript/releases.atom", source: "anthropic_gh", sourceLabel: "Anthropic TS SDK", defaultCategory: "product" },
-  { url: "https://github.com/openai/openai-python/releases.atom", source: "openai_gh", sourceLabel: "OpenAI SDK", defaultCategory: "product" },
-  { url: "https://github.com/meta-llama/llama-models/releases.atom", source: "meta_gh", sourceLabel: "Llama Models", defaultCategory: "model_release" },
-  { url: "https://github.com/huggingface/transformers/releases.atom", source: "hf_transformers", sourceLabel: "HF Transformers", defaultCategory: "product" },
-  { url: "https://github.com/mistralai/mistral-inference/releases.atom", source: "mistral_gh", sourceLabel: "Mistral Inference", defaultCategory: "product" },
-  { url: "https://github.com/google-deepmind/gemma/releases.atom", source: "google_gh", sourceLabel: "Gemma", defaultCategory: "model_release" },
-
-  // Individual AI voices & analysts
-  { url: "https://simonwillison.net/atom/everything/", source: "simonwillison", sourceLabel: "Simon Willison", defaultCategory: "product" },
-];
 
 // Keywords that help categorize items beyond default
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
@@ -197,12 +156,20 @@ async function fetchFeed(source: FeedSource): Promise<InsertFeedItem[]> {
 }
 
 export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemIds: number[] }> {
-  console.log(`[FeedEngine] Fetching ${FEED_SOURCES.length} feeds...`);
+  const enabledSources = await storage.getSources(true);
+  const feedSources: FeedSource[] = enabledSources.map((s) => ({
+    url: s.url,
+    source: s.slug,
+    sourceLabel: s.label,
+    defaultCategory: s.defaultCategory,
+  }));
+
+  console.log(`[FeedEngine] Fetching ${feedSources.length} feeds...`);
   let newItemCount = 0;
   const newItemIds: number[] = [];
 
   const results = await Promise.allSettled(
-    FEED_SOURCES.map(source => fetchFeed(source))
+    feedSources.map(source => fetchFeed(source))
   );
 
   for (const result of results) {
@@ -234,6 +201,21 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
   }
 
   return { newItemCount, newItemIds };
+}
+
+/**
+ * Live probe for user-submitted feed URLs. Shares the engine's parser (and its
+ * 10s timeout); throws with the parse error so callers can surface it.
+ */
+export async function probeFeedUrl(
+  url: string,
+): Promise<{ feedTitle: string; itemCount: number }> {
+  const feed = await parser.parseURL(url);
+  const feedTitle = (feed.title || "").trim();
+  const itemCount = (feed.items || []).length;
+  if (!feedTitle) throw new Error("Feed parsed but has no title");
+  if (itemCount < 1) throw new Error("Feed parsed but contains no entries");
+  return { feedTitle, itemCount };
 }
 
 // Seed synthetic data for local development demos only

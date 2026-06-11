@@ -57,10 +57,23 @@ export const briefings = pgTable("briefings", {
   generatedAt: text("generated_at").notNull(),
 });
 
+// RSS/Atom feed sources. slug doubles as feed_items.source; deleting a source
+// intentionally orphans its items (they keep the slug).
+export const sources = pgTable("sources", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  label: text("label").notNull(),
+  url: text("url").notNull().unique(),
+  defaultCategory: text("default_category").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: text("created_at").notNull(),
+});
+
 export const insertFeedItemSchema = createInsertSchema(feedItems).omit({ id: true });
 export const insertBookmarkSchema = createInsertSchema(bookmarks).omit({ id: true });
 export const insertWatchlistSchema = createInsertSchema(watchlists).omit({ id: true });
 export const insertBriefingSchema = createInsertSchema(briefings).omit({ id: true });
+export const insertSourceSchema = createInsertSchema(sources).omit({ id: true });
 
 export type FeedItem = typeof feedItems.$inferSelect;
 export type InsertFeedItem = z.infer<typeof insertFeedItemSchema>;
@@ -70,3 +83,5 @@ export type Watchlist = typeof watchlists.$inferSelect;
 export type InsertWatchlist = z.infer<typeof insertWatchlistSchema>;
 export type Briefing = typeof briefings.$inferSelect;
 export type InsertBriefing = z.infer<typeof insertBriefingSchema>;
+export type Source = typeof sources.$inferSelect;
+export type InsertSource = z.infer<typeof insertSourceSchema>;

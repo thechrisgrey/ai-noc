@@ -8,6 +8,38 @@ function escapeLike(str: string): string {
   return str.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+/** Serialize a number[] into the pgvector text literal: '[1,2,3]'. */
+function toVectorLiteral(vec: number[]): string {
+  return "[" + vec.join(",") + "]";
+}
+
+/**
+ * Map raw rows from a `sql` execute (snake_case, driver-dependent envelope)
+ * onto FeedItem. Used by the vector queries, which can't go through the typed
+ * query builder because of the `<=>` distance projection.
+ */
+function mapVectorRows(result: unknown): FeedItem[] {
+  const rows: any[] = (result as any).rows ?? (result as any) ?? [];
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    url: r.url,
+    source: r.source,
+    sourceLabel: r.source_label,
+    category: r.category,
+    publishedAt: r.published_at,
+    fetchedAt: r.fetched_at,
+    guid: r.guid,
+    isBreaking: r.is_breaking,
+    imageUrl: r.image_url,
+    clusterId: r.cluster_id,
+    priority: r.priority,
+    readAt: r.read_at,
+    embedding: r.embedding,
+  }));
+}
+
 interface PriorityCursor {
   p: number;
   t: string;
@@ -109,6 +141,13 @@ export interface IStorage {
     unreadCount: number;
   }>;
   getRecentItems(hours: number): Promise<FeedItem[]>;
+  updateEmbeddings(rows: { id: number; embedding: number[] }[]): Promise<void>;
+  getItemsMissingEmbeddings(limit: number): Promise<FeedItem[]>;
+  searchSemantic(
+    queryVec: number[],
+    opts?: { limit?: number; sinceHours?: number },
+  ): Promise<FeedItem[]>;
+  getRelatedItems(id: number, limit?: number): Promise<FeedItem[]>;
   updateClusterId(id: number, clusterId: string): Promise<void>;
   updatePriority(id: number, priority: number): Promise<void>;
   updateIsBreaking(id: number, isBreaking: boolean): Promise<void>;
@@ -343,6 +382,73 @@ export class DatabaseStorage implements IStorage {
       .from(feedItems)
       .where(sql`${feedItems.publishedAt} >= ${cutoff}`)
       .orderBy(desc(feedItems.publishedAt));
+  }
+
+  async updateEmbeddings(
+    rows: { id: number; embedding: number[] }[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const values = sql.join(
+      rows.map(
+        (r) => sql`(${r.id}::int, ${toVectorLiteral(r.embedding)}::vector)`,
+      ),
+      sql`, `,
+    );
+    await this.db.execute(sql`
+      UPDATE ${feedItems} AS f
+      SET embedding = v.embedding
+      FROM (VALUES ${values}) AS v(id, embedding)
+      WHERE f.id = v.id
+    `);
+  }
+
+  async getItemsMissingEmbeddings(limit: number): Promise<FeedItem[]> {
+    return await this.db
+      .select()
+      .from(feedItems)
+      .where(isNull(feedItems.embedding))
+      .orderBy(desc(feedItems.id))
+      .limit(limit);
+  }
+
+  async searchSemantic(
+    queryVec: number[],
+    opts: { limit?: number; sinceHours?: number } = {},
+  ): Promise<FeedItem[]> {
+    const { limit = 30, sinceHours } = opts;
+    const literal = toVectorLiteral(queryVec);
+    const since =
+      sinceHours !== undefined
+        ? sql` AND published_at >= ${new Date(Date.now() - sinceHours * 60 * 60 * 1000).toISOString()}`
+        : sql``;
+    const result = await this.db.execute(sql`
+      SELECT *, embedding <=> ${literal}::vector AS distance
+      FROM ${feedItems}
+      WHERE embedding IS NOT NULL${since}
+      ORDER BY distance ASC
+      LIMIT ${limit}
+    `);
+    return mapVectorRows(result);
+  }
+
+  async getRelatedItems(id: number, limit = 5): Promise<FeedItem[]> {
+    const source = await this.getFeedItemById(id);
+    if (!source?.embedding) return [];
+    const literal = toVectorLiteral(source.embedding as unknown as number[]);
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const clusterFilter = source.clusterId
+      ? sql` AND (cluster_id IS DISTINCT FROM ${source.clusterId})`
+      : sql``;
+    const result = await this.db.execute(sql`
+      SELECT *, embedding <=> ${literal}::vector AS distance
+      FROM ${feedItems}
+      WHERE embedding IS NOT NULL
+        AND id <> ${id}
+        AND published_at >= ${cutoff}${clusterFilter}
+      ORDER BY distance ASC
+      LIMIT ${limit}
+    `);
+    return mapVectorRows(result);
   }
 
   async updateClusterId(id: number, clusterId: string): Promise<void> {

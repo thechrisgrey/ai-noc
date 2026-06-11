@@ -131,6 +131,8 @@ export class AiNocStack extends cdk.Stack {
         BEDROCK_REGION: "us-east-1",
         TRUST_PROXY_HOPS: "2",
         RETENTION_DAYS: "90",
+        EMBEDDINGS_ENABLED: "true",
+        CLUSTER_SIM_THRESHOLD: "0.80",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(dbCredentials, "username"),
@@ -170,6 +172,7 @@ export class AiNocStack extends cdk.Stack {
         resources: [
           "arn:aws:bedrock:us-east-1::foundation-model/anthropic.*",
           `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.*`,
+          "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
         ],
       }),
     );

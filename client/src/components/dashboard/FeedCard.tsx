@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, BookmarkCheck, ExternalLink, AlertTriangle, Clock, ChevronDown } from "lucide-react";
+import { Bookmark, BookmarkCheck, ExternalLink, AlertTriangle, Clock, ChevronDown, Sparkles } from "lucide-react";
 import type { FeedItem } from "@shared/schema";
 import { CATEGORY_COLORS, type FeedItemWithBookmark } from "./constants";
 import { getSourceMeta, timeAgo } from "./utils";
@@ -27,6 +27,7 @@ export function FeedCard({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
 
   useEffect(() => {
     if (isSelected) cardRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -35,6 +36,11 @@ export function FeedCard({
   const { data: siblings = [], isLoading: siblingsLoading } = useQuery<FeedItem[]>({
     queryKey: ["/api/items", item.id, "cluster"],
     enabled: expanded,
+  });
+
+  const { data: related = [], isLoading: relatedLoading } = useQuery<FeedItem[]>({
+    queryKey: ["/api/items", item.id, "related"],
+    enabled: relatedOpen,
   });
 
   return (
@@ -96,6 +102,22 @@ export function FeedCard({
                 />
               </button>
             )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setRelatedOpen((v) => !v);
+              }}
+              aria-expanded={relatedOpen}
+              aria-label="Related signals"
+              className="flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] font-medium px-2 py-px rounded-full bg-white/[0.06] text-muted-foreground hover:text-primary data-readout transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Sparkles size={9} />
+              RELATED
+              <ChevronDown
+                size={9}
+                className={`transition-transform ${relatedOpen ? "rotate-180" : ""}`}
+              />
+            </button>
             {isHigh && (
               <span className="pulse-breaking flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] font-semibold text-red-400 bg-red-500/[0.12] px-2 py-px rounded-full">
                 <AlertTriangle size={9} />
@@ -186,6 +208,51 @@ export function FeedCard({
                     ) : (
                       <span className="truncate text-[11px] text-muted-foreground">
                         {sib.title}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Related signals (semantically nearest items) */}
+          {relatedOpen && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
+              <div className="flex items-center gap-1 text-[8px] uppercase tracking-[0.14em] font-semibold text-primary/80 data-readout mb-1">
+                <Sparkles size={8} />
+                RELATED SIGNALS
+              </div>
+              {relatedLoading ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  Loading related...
+                </div>
+              ) : related.length === 0 ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  No related signals found
+                </div>
+              ) : (
+                related.map((rel) => (
+                  <div key={rel.id} className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="flex-shrink-0 text-[10px] font-medium"
+                      style={{ color: getSourceMeta(rel.source).color }}
+                    >
+                      {rel.sourceLabel}
+                    </span>
+                    {rel.url ? (
+                      <a
+                        href={rel.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="truncate text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {rel.title}
+                      </a>
+                    ) : (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {rel.title}
                       </span>
                     )}
                   </div>

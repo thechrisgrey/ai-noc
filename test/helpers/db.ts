@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { drizzle } from "drizzle-orm/pglite";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -11,7 +12,7 @@ const MIGRATIONS_DIR = path.resolve(__dirname, "..", "..", "migrations");
  * order, and return a DatabaseStorage wired to it. Each call is isolated.
  */
 export async function createTestStorage() {
-  const client = new PGlite();
+  const client = new PGlite({ extensions: { vector } });
   await client.waitReady;
 
   const journal = JSON.parse(

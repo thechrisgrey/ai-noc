@@ -20,6 +20,7 @@ function makeItem(id: number, overrides: MakeItemOverrides = {}): FeedItem {
     clusterId: null,
     priority: 0,
     readAt: null,
+    embedding: null,
     ...overrides,
   };
 }

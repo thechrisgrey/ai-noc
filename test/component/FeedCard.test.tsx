@@ -24,6 +24,7 @@ function buildItem(overrides: Partial<FeedItemWithBookmark> = {}): FeedItemWithB
     clusterId: null,
     priority: 50,
     readAt: null,
+    embedding: null,
     isBookmarked: false,
     ...overrides,
   };
@@ -132,5 +133,16 @@ describe("<FeedCard />", () => {
     expect(pill).toHaveAttribute("aria-expanded", "true");
     await user.click(pill);
     expect(pill).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("renders a RELATED toggle and expands it on click", async () => {
+    const user = userEvent.setup();
+    renderCard(<FeedCard item={buildItem()} onToggleBookmark={() => {}} />);
+    const pill = screen.getByRole("button", { name: /related signals/i });
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    await user.click(pill);
+    expect(pill).toHaveAttribute("aria-expanded", "true");
+    // The default queryFn resolves to [], so the empty-state copy shows.
+    expect(await screen.findByText(/No related signals found/i)).toBeInTheDocument();
   });
 });

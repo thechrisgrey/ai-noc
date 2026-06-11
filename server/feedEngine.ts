@@ -4,7 +4,36 @@ import { clusterRecentItems } from "./clustering";
 import { recomputePriorities } from "./priority";
 import { recordSuccess, recordFailure } from "./feedHealth";
 import { buildDemoItems } from "./demoData";
-import type { InsertFeedItem } from "@shared/schema";
+import { embedMany, isEmbeddingsEnabled } from "./embeddings";
+import type { FeedItem, InsertFeedItem } from "@shared/schema";
+
+// Cap the per-cycle self-healing backfill so a long NULL backlog never blocks
+// a fetch cycle; the dedicated backfill script drains the rest.
+const BACKFILL_SWEEP_LIMIT = 25;
+
+/** Build the text Titan embeds for an item: "title: description". */
+function embedInput(item: { title: string; description: string | null }): string {
+  return item.title + (item.description ? ": " + item.description : "");
+}
+
+/**
+ * Embed the given items and persist their vectors. Failures leave embedding
+ * NULL so the next sweep retries; never throws.
+ */
+async function embedAndPersist(items: FeedItem[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const vectors = await embedMany(items.map(embedInput));
+    const updates: { id: number; embedding: number[] }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const vec = vectors[i];
+      if (vec) updates.push({ id: items[i].id, embedding: vec });
+    }
+    if (updates.length > 0) await storage.updateEmbeddings(updates);
+  } catch (err) {
+    console.error("[FeedEngine] Embedding persist failed:", (err as Error).message);
+  }
+}
 
 const parser = new RssParser({
   timeout: 10000,
@@ -190,6 +219,22 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
   }
 
   console.log(`[FeedEngine] Fetched ${newItemCount} new items`);
+
+  // Embed new items, then sweep up to BACKFILL_SWEEP_LIMIT stragglers whose
+  // prior embed failed — this runs before clustering so cosine clustering sees
+  // fresh vectors. Disabled wholesale via EMBEDDINGS_ENABLED=false.
+  if (isEmbeddingsEnabled()) {
+    try {
+      if (newItemIds.length > 0) {
+        const newItems = await storage.getItemsByIds(newItemIds);
+        await embedAndPersist(newItems);
+      }
+      const stragglers = await storage.getItemsMissingEmbeddings(BACKFILL_SWEEP_LIMIT);
+      await embedAndPersist(stragglers);
+    } catch (err) {
+      console.error("[FeedEngine] Embedding sweep failed:", (err as Error).message);
+    }
+  }
 
   // Always cluster + recompute (both diff-only and re-entrance-guarded);
   // running on quiet cycles is what guarantees stale priorities decay.

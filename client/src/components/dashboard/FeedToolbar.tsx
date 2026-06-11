@@ -1,10 +1,12 @@
-import { Search, X, ArrowUpDown, Bookmark, Filter, CheckCheck } from "lucide-react";
+import { Search, X, ArrowUpDown, Bookmark, Filter, CheckCheck, Sparkles } from "lucide-react";
 import { CATEGORIES, type Category, type Stats } from "./constants";
 import { getSourceMeta } from "./utils";
 
 interface FeedToolbarProps {
   searchQuery: string;
   setSearchQuery: (v: string) => void;
+  searchMode: "lexical" | "semantic";
+  setSearchMode: (v: "lexical" | "semantic") => void;
   sortMode: "time" | "priority";
   setSortMode: (v: "time" | "priority") => void;
   selectedCategory: Category;
@@ -27,6 +29,8 @@ interface FeedToolbarProps {
 export function FeedToolbar({
   searchQuery,
   setSearchQuery,
+  searchMode,
+  setSearchMode,
   sortMode,
   setSortMode,
   selectedSource,
@@ -65,6 +69,21 @@ export function FeedToolbar({
           </button>
         )}
       </div>
+
+      <button
+        onClick={() => setSearchMode(searchMode === "semantic" ? "lexical" : "semantic")}
+        disabled={!searchQuery}
+        aria-pressed={searchMode === "semantic"}
+        title={searchQuery ? "Toggle semantic (meaning-based) search" : "Enter a query to enable semantic search"}
+        className={`flex-shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border data-readout transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+          searchMode === "semantic" && searchQuery
+            ? "bg-primary/15 text-primary border-primary/25"
+            : "bg-white/[0.04] border-white/[0.08] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground"
+        }`}
+      >
+        <Sparkles size={10} />
+        SEMANTIC
+      </button>
 
       <div className="flex items-center gap-2">
         {selectedSource !== "all" && (

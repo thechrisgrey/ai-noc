@@ -8,8 +8,34 @@ import { fetchAllFeeds, probeFeedUrl, seedDemoData } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
 import { validateSourceInput, SOURCE_CATEGORIES } from "./sourceValidation";
+import { embedText, isEmbeddingsEnabled } from "./embeddings";
 
 let lastRefreshed: string | null = null;
+
+// In-process LRU for query embeddings, keyed by lowercased query. Bounds the
+// Bedrock cost of repeated identical semantic searches without a cache server.
+const QUERY_EMBED_CACHE_MAX = 50;
+const queryEmbedCache = new Map<string, number[]>();
+
+async function embedQuery(query: string): Promise<number[] | null> {
+  const key = query.toLowerCase();
+  const cached = queryEmbedCache.get(key);
+  if (cached) {
+    // Refresh recency (Map preserves insertion order).
+    queryEmbedCache.delete(key);
+    queryEmbedCache.set(key, cached);
+    return cached;
+  }
+  const vec = await embedText(query);
+  if (vec) {
+    queryEmbedCache.set(key, vec);
+    if (queryEmbedCache.size > QUERY_EMBED_CACHE_MAX) {
+      const oldest = queryEmbedCache.keys().next().value;
+      if (oldest !== undefined) queryEmbedCache.delete(oldest);
+    }
+  }
+  return vec;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -127,10 +153,25 @@ export async function registerRoutes(
     }
   });
 
+  // Decorate items with isBookmarked + coverageCount (shared by both the
+  // lexical/cursor path and the semantic path so the envelope stays identical).
+  async function decorateItems(items: Awaited<ReturnType<typeof storage.getFeedItems>>["items"]) {
+    const bookmarkedIds = await storage.getBookmarkedIds(items.map((i) => i.id));
+    const clusterIds = Array.from(
+      new Set(items.map((i) => i.clusterId).filter((c): c is string => !!c)),
+    );
+    const clusterCounts = await storage.getClusterCounts(clusterIds);
+    return items.map((item) => ({
+      ...item,
+      isBookmarked: bookmarkedIds.has(item.id),
+      coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
+    }));
+  }
+
   // Get feed items with optional filters + cursor pagination
   app.get("/api/feed", async (req, res) => {
     try {
-      const { limit, cursor, category, source, search, sort } = req.query;
+      const { limit, cursor, category, source, search, sort, mode } = req.query;
 
       // Validate & sanitize inputs
       const validCategories = ["all", "model_release", "research", "funding", "product", "policy", "infrastructure"];
@@ -139,6 +180,18 @@ export async function registerRoutes(
       const safeSort = sort === "priority" ? "priority" as const : "time" as const;
       const safeSource = typeof source === "string" && /^[a-z0-9_]+$/.test(source) ? source : undefined;
       const safeSearch = typeof search === "string" ? search.trim().slice(0, 200) || undefined : undefined;
+
+      // Semantic mode: embed the query and rank by cosine distance. Bypasses
+      // cursor pagination (nextCursor null). Falls through to lexical when the
+      // query is empty, embeddings are disabled, or the embed call fails.
+      if (mode === "semantic" && safeSearch && isEmbeddingsEnabled()) {
+        const queryVec = await embedQuery(safeSearch);
+        if (queryVec) {
+          const items = await storage.searchSemantic(queryVec, { limit: safeLimit });
+          const decorated = await decorateItems(items);
+          return res.json({ items: decorated, nextCursor: null });
+        }
+      }
 
       const result = await storage.getFeedItems({
         limit: safeLimit,
@@ -149,19 +202,7 @@ export async function registerRoutes(
         sort: safeSort,
       });
 
-      // Batch bookmark check (1 query instead of N)
-      const bookmarkedIds = await storage.getBookmarkedIds(
-        result.items.map((i) => i.id),
-      );
-      const clusterIds = Array.from(
-        new Set(result.items.map((i) => i.clusterId).filter((c): c is string => !!c)),
-      );
-      const clusterCounts = await storage.getClusterCounts(clusterIds);
-      const itemsWithBookmarks = result.items.map((item) => ({
-        ...item,
-        isBookmarked: bookmarkedIds.has(item.id),
-        coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
-      }));
+      const itemsWithBookmarks = await decorateItems(result.items);
 
       res.json({ items: itemsWithBookmarks, nextCursor: result.nextCursor });
     } catch (err) {
@@ -244,6 +285,20 @@ export async function registerRoutes(
       res.json(siblings);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch cluster siblings" });
+    }
+  });
+
+  // Semantically related items (nearest embeddings, excluding self + cluster)
+  app.get("/api/items/:id/related", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const related = await storage.getRelatedItems(id);
+      res.json(related);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch related items" });
     }
   });
 

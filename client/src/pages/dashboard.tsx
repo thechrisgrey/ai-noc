@@ -39,6 +39,9 @@ export default function Dashboard() {
     initParams.get("source") || "all",
   );
   const [searchQuery, setSearchQuery] = useState(initParams.get("search") || "");
+  const [searchMode, setSearchMode] = useState<"lexical" | "semantic">(
+    initParams.get("mode") === "semantic" ? "semantic" : "lexical",
+  );
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [newSignals, setNewSignals] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -57,6 +60,9 @@ export default function Dashboard() {
   const { toast } = useToast();
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
+  // Semantic search is only meaningful with a non-empty query.
+  const isSemantic = searchMode === "semantic" && debouncedSearch !== "";
+
   // ── URL sync ──
   useEffect(() => {
     const params = new URLSearchParams();
@@ -64,9 +70,10 @@ export default function Dashboard() {
     if (selectedSource !== "all") params.set("source", selectedSource);
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (sortMode !== "time") params.set("sort", sortMode);
+    if (isSemantic) params.set("mode", "semantic");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [selectedCategory, selectedSource, debouncedSearch, sortMode]);
+  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic]);
 
   useEffect(() => {
     localStorage.setItem("ai-noc-sort", sortMode);
@@ -103,14 +110,16 @@ export default function Dashboard() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<FeedPage>({
-    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode],
+    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (selectedCategory !== "all") params.set("category", selectedCategory);
       if (selectedSource !== "all") params.set("source", selectedSource);
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (sortMode !== "time") params.set("sort", sortMode);
-      if (pageParam) params.set("cursor", pageParam as string);
+      if (isSemantic) params.set("mode", "semantic");
+      // Semantic results come as a single distance-ranked page (nextCursor null).
+      if (pageParam && !isSemantic) params.set("cursor", pageParam as string);
       params.set("limit", "30");
       const res = await apiRequest("GET", `/api/feed?${params.toString()}`);
       return res.json();
@@ -458,6 +467,8 @@ export default function Dashboard() {
             <FeedToolbar
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
+              searchMode={searchMode}
+              setSearchMode={setSearchMode}
               sortMode={sortMode}
               setSortMode={setSortMode}
               selectedCategory={selectedCategory}

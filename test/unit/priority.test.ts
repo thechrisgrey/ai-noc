@@ -19,6 +19,7 @@ function makeItem(overrides: Partial<FeedItem> = {}): FeedItem {
     clusterId: null,
     priority: 0,
     readAt: null,
+    embedding: null,
     ...overrides,
   };
 }

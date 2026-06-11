@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, index, vector } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,6 +25,9 @@ export const feedItems = pgTable("feed_items", {
   clusterId: text("cluster_id"),
   priority: integer("priority").notNull().default(0),
   readAt: text("read_at"),
+  // Titan v2 embedding (1024-d, cosine-normalized). NULL until the ingest
+  // sweep embeds the item; backfill self-heals transient failures.
+  embedding: vector("embedding", { dimensions: 1024 }),
 }, (table) => [
   index("idx_published_at").on(table.publishedAt),
   index("idx_category_published").on(table.category, table.publishedAt),

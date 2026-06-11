@@ -114,6 +114,14 @@ export interface PaginatedFeed {
   nextCursor: string | null;
 }
 
+export interface SourceIntelRow {
+  source: string;
+  sourceLabel: string;
+  firsts: number;
+  contested: number;
+  medianLagSeconds: number | null;
+}
+
 export interface IStorage {
   getFeedItems(opts: {
     limit?: number;
@@ -160,6 +168,7 @@ export interface IStorage {
   pruneOldItems(days: number): Promise<number>;
   getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
   getSourceActivity(days: number): Promise<Record<string, number[]>>;
+  getSourceIntel(days: number): Promise<SourceIntelRow[]>;
   getWatchlists(): Promise<Watchlist[]>;
   createWatchlist(w: InsertWatchlist): Promise<Watchlist>;
   updateWatchlist(
@@ -607,6 +616,41 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  // First-mover leaderboard: within each multi-source story cluster, credit the
+  // source(s) that published at the earliest timestamp as the "first", and
+  // measure how far behind the rest trailed (median lag, in seconds).
+  async getSourceIntel(days: number): Promise<SourceIntelRow[]> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const rows = await this.db.execute(sql`
+      WITH clustered AS (
+        SELECT source, source_label, published_at,
+               MIN(published_at) OVER (PARTITION BY cluster_id) AS cluster_first,
+               COUNT(*) OVER (PARTITION BY cluster_id) AS cluster_size
+        FROM ${feedItems}
+        WHERE cluster_id IS NOT NULL AND published_at > ${cutoff}
+      )
+      SELECT source,
+             MAX(source_label) AS source_label,
+             COUNT(*) FILTER (WHERE cluster_size > 1 AND published_at = cluster_first) AS firsts,
+             COUNT(*) FILTER (WHERE cluster_size > 1) AS contested,
+             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (published_at::timestamptz - cluster_first::timestamptz)))
+               FILTER (WHERE cluster_size > 1 AND published_at > cluster_first) AS median_lag_seconds
+      FROM clustered
+      GROUP BY source
+      HAVING COUNT(*) FILTER (WHERE cluster_size > 1) > 0
+      ORDER BY firsts DESC
+    `);
+
+    const rawRows: any[] = (rows as any).rows ?? (rows as any);
+    return rawRows.map((r) => ({
+      source: r.source as string,
+      sourceLabel: r.source_label as string,
+      firsts: Number(r.firsts),
+      contested: Number(r.contested),
+      medianLagSeconds: r.median_lag_seconds == null ? null : Number(r.median_lag_seconds),
+    }));
   }
 
   async getWatchlists(): Promise<Watchlist[]> {

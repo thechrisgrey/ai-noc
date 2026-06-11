@@ -347,6 +347,19 @@ export async function registerRoutes(
     }
   });
 
+  // Source intelligence: first-mover leaderboard over a 7/30/90-day window
+  app.get("/api/sources/intel", async (req, res) => {
+    try {
+      const allowed = [7, 30, 90];
+      const requested = parseInt(req.query.days as string, 10);
+      const windowDays = allowed.includes(requested) ? requested : 30;
+      const sources = await storage.getSourceIntel(windowDays);
+      res.json({ windowDays, sources });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch source intel" });
+    }
+  });
+
   // Source health
   app.get("/api/sources/health", async (_req, res) => {
     try {

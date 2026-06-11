@@ -1,4 +1,5 @@
 import type { FeedItem } from "@shared/schema";
+import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
 import { storage } from "./storage";
 import { similarity } from "./clustering";
 
@@ -127,7 +128,6 @@ export async function recomputePriorities(): Promise<void> {
   isRecomputing = true;
   try {
     const items = await storage.getRecentItems(72);
-    if (items.length === 0) return;
 
     const clusterMap = buildClusterCoverageMap(items);
     const diffs: { id: number; priority: number; isBreaking: boolean }[] = [];
@@ -136,7 +136,7 @@ export async function recomputePriorities(): Promise<void> {
     for (const item of items) {
       const coverage = getCoverageCount(item, items, clusterMap);
       const priority = computePriority(item, coverage);
-      const isBreaking = priority >= 80;
+      const isBreaking = priority >= PRIORITY_ALERT_THRESHOLD;
 
       if (isBreaking) highPriorityCount++;
 
@@ -149,8 +149,10 @@ export async function recomputePriorities(): Promise<void> {
       await storage.bulkUpdatePriorities(diffs);
     }
 
+    const decayed = await storage.decayStalePriorities(72);
+
     console.log(
-      `[Priority] Scored ${items.length} items, ${diffs.length} updated, ${highPriorityCount} high-priority`,
+      `[Priority] Scored ${items.length} items, ${diffs.length} updated, ${highPriorityCount} high-priority, ${decayed} decayed`,
     );
   } finally {
     isRecomputing = false;

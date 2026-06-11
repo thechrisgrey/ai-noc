@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { clusterRecentItems } from "./clustering";
 import { recomputePriorities } from "./priority";
 import { recordSuccess, recordFailure } from "./feedHealth";
+import { buildDemoItems } from "./demoData";
 import type { InsertFeedItem } from "@shared/schema";
 
 const parser = new RssParser({
@@ -112,32 +113,61 @@ function isBreakingNews(title: string, description: string | null, publishedAt: 
   return mediumSignal.filter(kw => text.includes(kw)).length >= 2;
 }
 
+interface FeedEntry {
+  title?: string;
+  contentSnippet?: string;
+  content?: string;
+  summary?: string;
+  pubDate?: string;
+  isoDate?: string;
+  guid?: string;
+  link?: string;
+  enclosure?: { url?: string };
+}
+
+function normalizeEntry(
+  entry: FeedEntry,
+  source: Pick<FeedSource, "source" | "sourceLabel" | "defaultCategory">,
+  nowISO: string,
+): InsertFeedItem | null {
+  const title = entry.title || "Untitled";
+  const description = entry.contentSnippet || entry.content || entry.summary || null;
+  const truncatedDesc = description ? description.substring(0, 500) : null;
+  const ts = Date.parse(entry.pubDate || entry.isoDate || "");
+  const publishedAt = Number.isNaN(ts) ? nowISO : new Date(ts).toISOString();
+  const guid = entry.guid || entry.link || `${source.source}-${title}-${publishedAt}`;
+  const category = categorizeItem(title, truncatedDesc, source.defaultCategory);
+
+  return {
+    title,
+    description: truncatedDesc,
+    url: entry.link || null,
+    source: source.source,
+    sourceLabel: source.sourceLabel,
+    category,
+    publishedAt,
+    fetchedAt: nowISO,
+    guid,
+    isBreaking: isBreakingNews(title, truncatedDesc, publishedAt),
+    imageUrl: entry.enclosure?.url || null,
+  };
+}
+
 async function fetchFeed(source: FeedSource): Promise<InsertFeedItem[]> {
   try {
     const feed = await parser.parseURL(source.url);
     const items: InsertFeedItem[] = [];
 
     for (const entry of (feed.items || []).slice(0, 20)) {
-      const title = entry.title || "Untitled";
-      const description = entry.contentSnippet || entry.content || entry.summary || null;
-      const truncatedDesc = description ? description.substring(0, 500) : null;
-      const publishedAt = entry.pubDate || entry.isoDate || new Date().toISOString();
-      const guid = entry.guid || entry.link || `${source.source}-${title}-${publishedAt}`;
-      const category = categorizeItem(title, truncatedDesc, source.defaultCategory);
-
-      items.push({
-        title,
-        description: truncatedDesc,
-        url: entry.link || null,
-        source: source.source,
-        sourceLabel: source.sourceLabel,
-        category,
-        publishedAt: new Date(publishedAt).toISOString(),
-        fetchedAt: new Date().toISOString(),
-        guid,
-        isBreaking: isBreakingNews(title, truncatedDesc, publishedAt),
-        imageUrl: entry.enclosure?.url || null,
-      });
+      try {
+        const item = normalizeEntry(entry, source, new Date().toISOString());
+        if (item) items.push(item);
+      } catch (err) {
+        console.warn(
+          `[FeedEngine] Skipping bad entry from ${source.sourceLabel} ("${entry.title || "untitled"}"):`,
+          (err as Error).message,
+        );
+      }
     }
 
     recordSuccess(source.source);
@@ -177,336 +207,37 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
 
   console.log(`[FeedEngine] Fetched ${newItemCount} new items`);
 
-  // Cluster recent items, then recompute priorities
-  if (newItemCount > 0) {
-    try {
-      await clusterRecentItems();
-      await recomputePriorities();
-    } catch (err) {
-      console.error("[FeedEngine] Post-fetch processing failed:", (err as Error).message);
-    }
+  // Always cluster + recompute (both diff-only and re-entrance-guarded);
+  // running on quiet cycles is what guarantees stale priorities decay.
+  try {
+    await clusterRecentItems();
+    await recomputePriorities();
+  } catch (err) {
+    console.error("[FeedEngine] Post-fetch processing failed:", (err as Error).message);
   }
 
   return { newItemCount, newItemIds };
 }
 
-// Seed with synthetic data if DB is empty for demo purposes
+// Seed synthetic data for local development demos only
 export async function seedDemoData(): Promise<void> {
+  if (process.env.NODE_ENV === "production") {
+    console.log("[FeedEngine] Demo seed skipped: never seeds in production");
+    return;
+  }
+  if (process.env.SEED_DEMO_DATA !== "true") {
+    console.log('[FeedEngine] Demo seed skipped: SEED_DEMO_DATA is not "true"');
+    return;
+  }
   const stats = await storage.getStats();
-  if (stats.total > 0) return;
+  if (stats.total > 0) {
+    console.log("[FeedEngine] Demo seed skipped: feed_items table is not empty");
+    return;
+  }
 
   console.log("[FeedEngine] Seeding demo data...");
 
-  const now = new Date();
-  const demoItems: InsertFeedItem[] = [
-    // OpenAI
-    {
-      title: "GPT-5 Turbo: 2x Faster Inference with Improved Reasoning",
-      description: "OpenAI announces GPT-5 Turbo with dramatically reduced latency, improved chain-of-thought reasoning, and native multimodal capabilities. Available today via API.",
-      url: "https://openai.com/blog",
-      source: "openai",
-      sourceLabel: "OpenAI",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-openai-gpt5-turbo",
-      isBreaking: true,
-      imageUrl: null,
-    },
-    {
-      title: "Sora 2.0: Real-Time Video Generation at 4K Resolution",
-      description: "OpenAI's video model now supports real-time generation, 4K output, and fine-grained style control. Enterprise API access rolling out this week.",
-      url: "https://openai.com/blog",
-      source: "openai",
-      sourceLabel: "OpenAI",
-      category: "product",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 3).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-openai-sora2",
-      isBreaking: true,
-      imageUrl: null,
-    },
-    {
-      title: "OpenAI Codex Agent: Autonomous Software Engineering",
-      description: "New Codex agent can handle multi-file refactors, write tests, and deploy to production with human approval gates. Currently in limited beta.",
-      url: "https://openai.com/blog",
-      source: "openai",
-      sourceLabel: "OpenAI",
-      category: "product",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 8).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-openai-codex-agent",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Anthropic
-    {
-      title: "Claude 4 Opus: Extended Context Window to 1M Tokens",
-      description: "Anthropic releases Claude 4 Opus with 1M token context window, improved tool use, and significantly reduced hallucination rates across all benchmarks.",
-      url: "https://anthropic.com/news",
-      source: "anthropic",
-      sourceLabel: "Anthropic",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 2).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-anthropic-claude4-opus",
-      isBreaking: true,
-      imageUrl: null,
-    },
-    {
-      title: "Constitutional AI v3: Self-Improving Safety Alignment",
-      description: "New paper from Anthropic introduces Constitutional AI v3, demonstrating models that iteratively improve their own safety properties without human feedback.",
-      url: "https://anthropic.com/research",
-      source: "anthropic",
-      sourceLabel: "Anthropic",
-      category: "research",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 12).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-anthropic-cai-v3",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "Anthropic Raises $5B Series D at $60B Valuation",
-      description: "Anthropic closes its largest funding round led by Google and Spark Capital. Company plans to invest in compute infrastructure and research talent.",
-      url: "https://anthropic.com/news",
-      source: "anthropic",
-      sourceLabel: "Anthropic",
-      category: "funding",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 24).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-anthropic-series-d",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Google DeepMind
-    {
-      title: "Gemini Ultra 2.0: Multi-Agent Orchestration Built-In",
-      description: "Google DeepMind releases Gemini Ultra 2.0 with native multi-agent orchestration, enabling complex workflows across search, code, and data analysis in a single model.",
-      url: "https://deepmind.google/blog",
-      source: "google_ai",
-      sourceLabel: "Google DeepMind",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 5).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-deepmind-gemini-ultra2",
-      isBreaking: true,
-      imageUrl: null,
-    },
-    {
-      title: "AlphaFold 4: Protein-Drug Interaction Prediction",
-      description: "DeepMind extends AlphaFold to predict protein-drug interactions with 95% accuracy, potentially accelerating drug discovery by years.",
-      url: "https://deepmind.google/blog",
-      source: "google_ai",
-      sourceLabel: "Google DeepMind",
-      category: "research",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 18).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-deepmind-alphafold4",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Meta AI
-    {
-      title: "LLaMA 4 400B: Open-Source Frontier Model",
-      description: "Meta releases LLaMA 4 with 400B parameters under an open license. Benchmarks competitive with proprietary models across reasoning, code, and multilingual tasks.",
-      url: "https://ai.meta.com/blog",
-      source: "meta_ai",
-      sourceLabel: "Meta AI",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 6).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-meta-llama4",
-      isBreaking: true,
-      imageUrl: null,
-    },
-    {
-      title: "Meta's New AI Chip: MTIA v3 for Inference at Scale",
-      description: "Meta unveils third-generation custom silicon designed for inference workloads, claiming 3x efficiency over previous generation across recommendation and language models.",
-      url: "https://ai.meta.com/blog",
-      source: "meta_ai",
-      sourceLabel: "Meta AI",
-      category: "infrastructure",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 36).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-meta-mtia-v3",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // xAI
-    {
-      title: "Grok 3.5: Enhanced Real-Time Web Understanding",
-      description: "xAI releases Grok 3.5 with improved real-time web browsing, fact verification, and multi-step reasoning. Integrated into X premium features.",
-      url: "https://x.ai/blog",
-      source: "xai",
-      sourceLabel: "xAI",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 4).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-xai-grok35",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Mistral AI
-    {
-      title: "Mistral Large 3: European Sovereign AI Model",
-      description: "Mistral releases Large 3, a 175B parameter model trained exclusively on European data centers with full GDPR compliance. Competitive on multilingual benchmarks.",
-      url: "https://mistral.ai/news",
-      source: "mistral",
-      sourceLabel: "Mistral AI",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 10).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-mistral-large3",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Stability AI
-    {
-      title: "Stable Diffusion 4: Video and 3D Generation Unified",
-      description: "Stability AI releases SD4 combining image, video, and 3D asset generation in a single model architecture. Open weights available on Hugging Face.",
-      url: "https://stability.ai/news",
-      source: "stability",
-      sourceLabel: "Stability AI",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 15).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-stability-sd4",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Infrastructure
-    {
-      title: "NVIDIA H200 Tensor Core GPU: 2x Memory Bandwidth",
-      description: "NVIDIA announces H200 with 141GB HBM3e memory and 4.8TB/s bandwidth. Specifically optimized for large language model inference workloads.",
-      url: "https://nvidia.com/blog",
-      source: "nvidia",
-      sourceLabel: "NVIDIA",
-      category: "infrastructure",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 48).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-nvidia-h200",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "FlashAttention-3: 50% Faster Transformer Training",
-      description: "New paper introduces FlashAttention-3 with hardware-aware optimizations achieving 50% speedup on H100 GPUs. Already integrated into PyTorch nightly.",
-      url: "https://arxiv.org",
-      source: "arxiv_ml",
-      sourceLabel: "arXiv ML",
-      category: "infrastructure",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 20).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-flashattention3",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Research
-    {
-      title: "Scaling Laws for Mixture of Experts: 10x Efficiency",
-      description: "Researchers demonstrate new scaling laws specific to MoE architectures, showing that sparse models can achieve equivalent performance at 10x lower compute cost.",
-      url: "https://arxiv.org",
-      source: "arxiv_ml",
-      sourceLabel: "arXiv ML",
-      category: "research",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 14).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-moe-scaling-laws",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "Test-Time Compute: Why Thinking Longer Beats Bigger Models",
-      description: "New research shows that allocating more compute at inference time (chain-of-thought, beam search, verification) often outperforms simply scaling model parameters.",
-      url: "https://arxiv.org",
-      source: "arxiv_ai",
-      sourceLabel: "arXiv AI",
-      category: "research",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 22).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-test-time-compute",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Policy
-    {
-      title: "EU AI Act: First Compliance Deadline Approaches",
-      description: "Companies operating AI systems in the EU face their first compliance checkpoint. General-purpose AI providers must register and submit transparency reports.",
-      url: "https://techcrunch.com",
-      source: "techcrunch",
-      sourceLabel: "TechCrunch AI",
-      category: "policy",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 30).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-eu-ai-act-deadline",
-      isBreaking: false,
-      imageUrl: null,
-    },
-
-    // Individuals / Community
-    {
-      title: "Boris Cherny: Building Reliable AI Agents with Type-Safe Tool Calling",
-      description: "Boris Cherny publishes a comprehensive guide on using TypeScript type systems to enforce correctness in AI agent tool calling patterns.",
-      url: "https://twitter.com/borischerny",
-      source: "community",
-      sourceLabel: "AI Community",
-      category: "product",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 7).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-boris-cherny-agents",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "Hugging Face: SmolLM 3 Beats GPT-3.5 at 1.7B Parameters",
-      description: "Hugging Face releases SmolLM 3, a family of small language models that outperform GPT-3.5 Turbo on several benchmarks while running on consumer hardware.",
-      url: "https://huggingface.co/blog",
-      source: "huggingface",
-      sourceLabel: "Hugging Face",
-      category: "model_release",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 9).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-hf-smollm3",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "Cohere Command R+: Enterprise RAG Performance Leader",
-      description: "Cohere announces Command R+ optimized for retrieval-augmented generation, claiming state-of-the-art on enterprise knowledge retrieval benchmarks.",
-      url: "https://cohere.com/blog",
-      source: "cohere",
-      sourceLabel: "Cohere",
-      category: "product",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 16).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-cohere-command-r-plus",
-      isBreaking: false,
-      imageUrl: null,
-    },
-    {
-      title: "1-Bit LLMs: Microsoft Proves Ternary Weights Match Full Precision",
-      description: "Microsoft Research demonstrates that models using only {-1, 0, 1} weights can match full-precision performance, enabling 10x cheaper inference on commodity hardware.",
-      url: "https://arxiv.org",
-      source: "arxiv_ml",
-      sourceLabel: "arXiv ML",
-      category: "infrastructure",
-      publishedAt: new Date(now.getTime() - 1000 * 60 * 60 * 25).toISOString(),
-      fetchedAt: now.toISOString(),
-      guid: "demo-1bit-llms",
-      isBreaking: false,
-      imageUrl: null,
-    },
-  ];
+  const demoItems = buildDemoItems(new Date());
 
   for (const item of demoItems) {
     try {
@@ -522,3 +253,4 @@ export async function seedDemoData(): Promise<void> {
 // Exposed for unit tests only — keep prefix so intent is explicit.
 export const __testing__categorizeItem = categorizeItem;
 export const __testing__isBreakingNews = isBreakingNews;
+export const __testing__normalizeEntry = normalizeEntry;

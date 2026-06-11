@@ -11,13 +11,19 @@ export const feedItems = pgTable("feed_items", {
   source: text("source").notNull(),
   sourceLabel: text("source_label").notNull(),
   category: text("category").notNull(),
+  // Canonical UTC ISO-8601 with Z suffix (Date.prototype.toISOString) so that
+  // lexicographic order equals chronological order; cursor pagination and
+  // priority decay compare this column as text. Every write path must
+  // normalize through toISOString().
   publishedAt: text("published_at").notNull(),
   fetchedAt: text("fetched_at").notNull(),
   guid: text("guid").notNull().unique(),
+  // Ingest-time heuristic only until the first recompute; after that,
+  // recomputePriorities owns this flag (threshold in shared/constants.ts).
   isBreaking: boolean("is_breaking").default(false),
   imageUrl: text("image_url"),
   clusterId: text("cluster_id"),
-  priority: integer("priority").default(0),
+  priority: integer("priority").notNull().default(0),
 }, (table) => [
   index("idx_published_at").on(table.publishedAt),
   index("idx_category_published").on(table.category, table.publishedAt),

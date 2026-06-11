@@ -154,3 +154,91 @@ describe("DatabaseStorage (PGlite)", () => {
     expect(bAfter?.clusterId).toBe("story-1");
   });
 });
+
+describe("decayStalePriorities", () => {
+  let storage: DatabaseStorage;
+  let staleId: number;
+  let freshId: number;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
+    const stale = await storage.createFeedItem({
+      title: "stale breaking", description: null, url: null,
+      source: "openai", sourceLabel: "OpenAI", category: "model_release",
+      publishedAt: hoursAgo(80),
+      fetchedAt: new Date().toISOString(), guid: "decay-stale", isBreaking: false, imageUrl: null,
+    });
+    const fresh = await storage.createFeedItem({
+      title: "fresh breaking", description: null, url: null,
+      source: "anthropic", sourceLabel: "Anthropic", category: "model_release",
+      publishedAt: hoursAgo(10),
+      fetchedAt: new Date().toISOString(), guid: "decay-fresh", isBreaking: false, imageUrl: null,
+    });
+    staleId = stale.id;
+    freshId = fresh.id;
+    await storage.bulkUpdatePriorities([
+      { id: staleId, priority: 85, isBreaking: true },
+      { id: freshId, priority: 85, isBreaking: true },
+    ]);
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("caps stale items at 50, clears breaking, and leaves fresh items untouched", async () => {
+    const affected = await storage.decayStalePriorities(72);
+    expect(affected).toBe(1);
+
+    const stale = await storage.getFeedItemById(staleId);
+    expect(stale?.priority).toBe(50);
+    expect(stale?.isBreaking).toBe(false);
+
+    const fresh = await storage.getFeedItemById(freshId);
+    expect(fresh?.priority).toBe(85);
+    expect(fresh?.isBreaking).toBe(true);
+
+    const stats = await storage.getStats();
+    expect(stats.breakingCount).toBe(1);
+  });
+
+  it("second run affects 0 rows", async () => {
+    expect(await storage.decayStalePriorities(72)).toBe(0);
+  });
+});
+
+describe("getFeedItems sinceHours", () => {
+  let storage: DatabaseStorage;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
+    for (const [guid, hours] of [["since-6h", 6], ["since-30h", 30], ["since-80h", 80]] as const) {
+      await storage.createFeedItem({
+        title: guid, description: null, url: null,
+        source: "openai", sourceLabel: "OpenAI", category: "product",
+        publishedAt: hoursAgo(hours),
+        fetchedAt: new Date().toISOString(), guid, isBreaking: false, imageUrl: null,
+      });
+    }
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("returns only items within the window", async () => {
+    const res = await storage.getFeedItems({ sinceHours: 24 });
+    expect(res.items.map((i) => i.guid)).toEqual(["since-6h"]);
+  });
+
+  it("widening the window includes older items", async () => {
+    const res = await storage.getFeedItems({ sinceHours: 72 });
+    expect(res.items.map((i) => i.guid)).toEqual(["since-6h", "since-30h"]);
+  });
+});

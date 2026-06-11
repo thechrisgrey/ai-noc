@@ -1,11 +1,68 @@
 import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, desc, ilike, or, and, lt, count, sql, inArray } from "drizzle-orm";
+import { eq, desc, ilike, or, and, lt, gte, count, sql, inArray } from "drizzle-orm";
 
 /** Escape LIKE-special characters so they are treated as literals */
 function escapeLike(str: string): string {
   return str.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+interface PriorityCursor {
+  p: number;
+  t: string;
+  id: number;
+}
+
+interface TimeCursor {
+  t: string;
+  id: number;
+}
+
+/** Opaque keyset cursor for priority-sorted pagination: (priority, publishedAt, id). */
+export function encodePriorityCursor(
+  item: Pick<FeedItem, "priority" | "publishedAt" | "id">,
+): string {
+  return Buffer.from(
+    JSON.stringify({ p: item.priority, t: item.publishedAt, id: item.id }),
+  ).toString("base64url");
+}
+
+export function decodePriorityCursor(s: string): PriorityCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(s, "base64url").toString("utf-8"));
+    if (
+      typeof parsed?.p === "number" &&
+      typeof parsed?.t === "string" &&
+      typeof parsed?.id === "number"
+    ) {
+      return { p: parsed.p, t: parsed.t, id: parsed.id };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Opaque keyset cursor for time-sorted pagination: (publishedAt, id). */
+export function encodeTimeCursor(
+  item: Pick<FeedItem, "publishedAt" | "id">,
+): string {
+  return Buffer.from(
+    JSON.stringify({ t: item.publishedAt, id: item.id }),
+  ).toString("base64url");
+}
+
+export function decodeTimeCursor(s: string): TimeCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(s, "base64url").toString("utf-8"));
+    if (typeof parsed?.t === "string" && typeof parsed?.id === "number") {
+      return { t: parsed.t, id: parsed.id };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function buildConnectionString(): string {
@@ -33,6 +90,7 @@ export interface IStorage {
     source?: string;
     search?: string;
     sort?: "time" | "priority";
+    sinceHours?: number;
   }): Promise<PaginatedFeed>;
   getFeedItemById(id: number): Promise<FeedItem | undefined>;
   createFeedItem(item: InsertFeedItem): Promise<FeedItem>;
@@ -52,6 +110,7 @@ export interface IStorage {
   updatePriority(id: number, priority: number): Promise<void>;
   updateIsBreaking(id: number, isBreaking: boolean): Promise<void>;
   bulkUpdatePriorities(rows: { id: number; priority: number; isBreaking: boolean }[]): Promise<void>;
+  decayStalePriorities(hours: number, cap?: number): Promise<number>;
   bulkUpdateClusterIds(rows: { id: number; clusterId: string }[]): Promise<void>;
   getItemsByIds(ids: number[]): Promise<FeedItem[]>;
   getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
@@ -69,7 +128,6 @@ export interface IStorage {
  *   - Production: node-postgres Pool
  *   - Tests: PGlite via drizzle-orm/pglite (shares same query API)
  */
-// biome-ignore lint/suspicious/noExplicitAny: drizzle's generic db type is complex; tests pass either NodePg or PGlite-backed clients
 type AnyPgDb = NodePgDatabase<any> | any;
 
 export class DatabaseStorage implements IStorage {
@@ -85,12 +143,43 @@ export class DatabaseStorage implements IStorage {
     source?: string;
     search?: string;
     sort?: "time" | "priority";
+    sinceHours?: number;
   } = {}): Promise<PaginatedFeed> {
-    const { limit = 30, cursor, category, source, search, sort = "time" } = opts;
+    const { limit = 30, cursor, category, source, search, sort = "time", sinceHours } = opts;
     const conditions: any[] = [];
 
     if (cursor) {
-      conditions.push(lt(feedItems.publishedAt, cursor));
+      if (sort === "priority") {
+        const decoded = decodePriorityCursor(cursor);
+        // Malformed cursors are ignored rather than failing the request.
+        if (decoded) {
+          conditions.push(
+            or(
+              lt(feedItems.priority, decoded.p),
+              and(eq(feedItems.priority, decoded.p), lt(feedItems.publishedAt, decoded.t)),
+              and(
+                eq(feedItems.priority, decoded.p),
+                eq(feedItems.publishedAt, decoded.t),
+                lt(feedItems.id, decoded.id),
+              ),
+            ),
+          );
+        }
+      } else {
+        const decoded = decodeTimeCursor(cursor);
+        if (decoded) {
+          conditions.push(
+            or(
+              lt(feedItems.publishedAt, decoded.t),
+              and(eq(feedItems.publishedAt, decoded.t), lt(feedItems.id, decoded.id)),
+            ),
+          );
+        }
+      }
+    }
+    if (sinceHours !== undefined) {
+      const cutoff = new Date(Date.now() - sinceHours * 60 * 60 * 1000).toISOString();
+      conditions.push(gte(feedItems.publishedAt, cutoff));
     }
     if (category && category !== "all") {
       conditions.push(eq(feedItems.category, category));
@@ -110,8 +199,8 @@ export class DatabaseStorage implements IStorage {
 
     const orderBy =
       sort === "priority"
-        ? [desc(feedItems.priority), desc(feedItems.publishedAt)]
-        : [desc(feedItems.publishedAt)];
+        ? [desc(feedItems.priority), desc(feedItems.publishedAt), desc(feedItems.id)]
+        : [desc(feedItems.publishedAt), desc(feedItems.id)];
 
     const query = this.db.select().from(feedItems);
     const items =
@@ -119,8 +208,13 @@ export class DatabaseStorage implements IStorage {
         ? await query.where(and(...conditions)).orderBy(...orderBy).limit(limit)
         : await query.orderBy(...orderBy).limit(limit);
 
+    const last = items[items.length - 1];
     const nextCursor =
-      items.length === limit ? items[items.length - 1].publishedAt : null;
+      items.length === limit
+        ? sort === "priority"
+          ? encodePriorityCursor(last)
+          : encodeTimeCursor(last)
+        : null;
 
     return { items, nextCursor };
   }
@@ -245,6 +339,18 @@ export class DatabaseStorage implements IStorage {
       FROM (VALUES ${values}) AS v(id, priority, is_breaking)
       WHERE f.id = v.id
     `);
+  }
+
+  async decayStalePriorities(hours: number, cap = 50): Promise<number> {
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const result = await this.db.execute(sql`
+      UPDATE ${feedItems}
+      SET is_breaking = false, priority = LEAST(priority, ${cap}::int)
+      WHERE published_at < ${cutoff}
+        AND (is_breaking = true OR priority > ${cap}::int)
+    `);
+    // node-postgres reports rowCount; PGlite reports affectedRows.
+    return (result as any).rowCount ?? (result as any).affectedRows ?? 0;
   }
 
   async bulkUpdateClusterIds(

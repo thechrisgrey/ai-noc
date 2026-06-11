@@ -1,7 +1,7 @@
 import { SOURCE_META, type FeedItemWithBookmark } from "./constants";
 
 export function getSourceMeta(source: string) {
-  return SOURCE_META[source] || { icon: SOURCE_META.community.icon, color: "#00c8b4", label: source };
+  return SOURCE_META[source] || { icon: SOURCE_META.community.icon, color: "hsl(68, 95%, 60%)", label: source };
 }
 
 export function timeAgo(dateStr: string): string {

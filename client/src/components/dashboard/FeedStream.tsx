@@ -41,49 +41,53 @@ export function FeedStream({
     <main className="flex-1 flex flex-col overflow-hidden">
       {/* Live update notification */}
       {newSignals > 0 && (
-        <button
-          onClick={onDismissNewSignals}
-          className="flex-shrink-0 px-4 py-2 border-b border-primary/20 bg-primary/5 flex items-center justify-center gap-2 text-xs text-primary hover:bg-primary/10 transition-colors cursor-pointer data-readout"
-        >
-          <Radio size={12} className="status-pulse" />
-          {newSignals} new signal{newSignals !== 1 ? "s" : ""} detected
-          -- click to load
-        </button>
+        <div className="flex-shrink-0 flex justify-center px-4 py-2">
+          <button
+            onClick={onDismissNewSignals}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] text-primary bg-primary/15 border border-primary/25 hover:bg-primary/20 transition-colors cursor-pointer data-readout shadow-[0_0_16px_hsla(68,96%,58%,0.15)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <Radio size={12} className="status-pulse" />
+            {newSignals} new signal{newSignals !== 1 ? "s" : ""} detected
+            -- click to load
+          </button>
+        </div>
       )}
 
       {/* Breaking Ticker */}
       {breakingItems.length > 0 && !showBookmarks && (
-        <div className="flex-shrink-0 px-4 py-2 border-b border-red-500/15 bg-red-950/10">
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex-shrink-0 flex items-center gap-1 text-red-400/80 font-semibold uppercase tracking-wider text-[10px]">
-              <AlertTriangle size={11} className="status-pulse" />
-              BREAKING
-            </span>
-            <div className="flex-1 overflow-hidden">
-              <div className="flex whitespace-nowrap animate-marquee">
-                {[...breakingItems, ...breakingItems].map((item, idx) => (
-                  <span
-                    key={`${item.id}-${idx}`}
-                    aria-hidden={idx >= breakingItems.length || undefined}
-                    className="inline-flex items-center mr-8"
-                  >
+        <div className="flex-shrink-0 px-4 pt-3">
+          <div className="rounded-lg border border-red-500/15 bg-red-500/10 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex-shrink-0 flex items-center gap-1.5 text-red-400 font-semibold uppercase tracking-[0.14em] text-[10px]">
+                <AlertTriangle size={11} className="status-pulse" />
+                BREAKING
+              </span>
+              <div className="flex-1 overflow-hidden">
+                <div className="flex whitespace-nowrap animate-marquee">
+                  {[...breakingItems, ...breakingItems].map((item, idx) => (
                     <span
-                      className="font-medium"
-                      style={{
-                        color: getSourceMeta(item.source).color,
-                      }}
+                      key={`${item.id}-${idx}`}
+                      aria-hidden={idx >= breakingItems.length || undefined}
+                      className="inline-flex items-center mr-8"
                     >
-                      {item.sourceLabel}
+                      <span
+                        className="font-medium"
+                        style={{
+                          color: getSourceMeta(item.source).color,
+                        }}
+                      >
+                        {item.sourceLabel}
+                      </span>
+                      <span className="mx-2 text-muted-foreground/40">
+                        :
+                      </span>
+                      <span className="text-muted-foreground">
+                        {item.title}
+                      </span>
+                      <span className="text-white/[0.12] mx-4">|</span>
                     </span>
-                    <span className="mx-2 text-muted-foreground/40">
-                      :
-                    </span>
-                    <span className="text-muted-foreground/70">
-                      {item.title}
-                    </span>
-                    <span className="text-border/30 mx-4">|</span>
-                  </span>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -131,14 +135,14 @@ function LoadingSkeleton() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="border border-border/30 rounded bg-card/20 px-4 py-3 border-l-[3px] border-l-border/20"
+          className="rounded-xl border border-white/[0.06] bg-card px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         >
           <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded skeleton-shimmer" />
+            <div className="w-7 h-7 rounded-lg skeleton-shimmer" />
             <div className="flex-1 space-y-2">
               <div className="flex gap-2">
-                <div className="h-3 w-16 rounded skeleton-shimmer" />
-                <div className="h-3 w-14 rounded skeleton-shimmer" />
+                <div className="h-3 w-16 rounded-full skeleton-shimmer" />
+                <div className="h-3 w-14 rounded-full skeleton-shimmer" />
               </div>
               <div className="h-4 w-4/5 rounded skeleton-shimmer" />
               <div className="h-3 w-3/5 rounded skeleton-shimmer" />
@@ -159,15 +163,17 @@ function BookmarksView({
 }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-amber-400/80 mb-3 flex items-center gap-1.5 data-readout">
+      <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-amber-400/90 mb-3 flex items-center gap-1.5 data-readout">
         <BookmarkCheck size={12} />
         SAVED SIGNALS ({bookmarksList.length})
       </div>
       {bookmarksList.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <Bookmark size={28} className="mb-3 opacity-20" />
-          <p className="text-sm opacity-60">No saved signals</p>
-          <p className="text-xs mt-1 opacity-30">
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex items-center justify-center mb-4">
+            <Bookmark size={18} className="text-muted-foreground/60" />
+          </div>
+          <p className="text-sm text-foreground/80">No saved signals</p>
+          <p className="text-xs mt-1 text-muted-foreground">
             Bookmark items to track them here
           </p>
         </div>
@@ -192,17 +198,19 @@ function BookmarksView({
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20">
-      <div className="flex flex-col items-center px-10 py-8 rounded border border-red-500/25 bg-red-950/15 border-l-[3px] border-l-red-500">
-        <AlertTriangle size={28} className="mb-3 text-red-400/60" />
-        <p className="text-sm uppercase tracking-wider text-red-400/80 font-semibold data-readout">
+      <div className="flex flex-col items-center px-10 py-8 rounded-2xl border border-destructive/25 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_8px_24px_rgba(0,0,0,0.5)]">
+        <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center mb-4">
+          <AlertTriangle size={20} className="text-destructive" />
+        </div>
+        <p className="text-xs uppercase tracking-[0.14em] text-destructive font-semibold data-readout">
           SIGNAL LINK DOWN
         </p>
-        <p className="text-xs mt-1 text-muted-foreground/60">
+        <p className="text-xs mt-1.5 text-muted-foreground">
           Feed unavailable -- check connection
         </p>
         <button
           onClick={onRetry}
-          className="mt-4 flex items-center gap-1.5 text-[10px] px-3 py-1.5 rounded border border-primary/20 text-primary hover:bg-primary/10 data-readout transition-colors"
+          className="mt-5 flex items-center gap-1.5 text-[10px] tracking-[0.14em] px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-foreground hover:bg-white/[0.07] data-readout transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <RefreshCw size={10} />
           RETRY
@@ -214,10 +222,12 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-      <Radio size={28} className="mb-3 opacity-20" />
-      <p className="text-sm opacity-60">No signals detected</p>
-      <p className="text-xs mt-1 opacity-30">
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex items-center justify-center mb-4">
+        <Radio size={18} className="text-muted-foreground/60" />
+      </div>
+      <p className="text-sm text-foreground/80">No signals detected</p>
+      <p className="text-xs mt-1 text-muted-foreground">
         Try adjusting your filters or sync feeds
       </p>
     </div>
@@ -235,7 +245,7 @@ function InfiniteScrollSentinel({
     <>
       <div ref={loadMoreRef as React.Ref<HTMLDivElement>} className="h-4" />
       {isFetchingNextPage && (
-        <div className="flex items-center justify-center py-4 text-xs text-muted-foreground/40 data-readout gap-2">
+        <div className="flex items-center justify-center py-4 text-xs text-muted-foreground/60 data-readout gap-2">
           <RefreshCw size={12} className="animate-spin" />
           Loading more signals...
         </div>
@@ -292,12 +302,12 @@ function GroupedList({
     <div className="space-y-4">
       {groupedItems.map((group) => (
         <div key={group.label}>
-          <div className="flex items-center gap-3 py-1.5 mb-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/40 data-readout font-medium">
+          <div className="flex items-center gap-3 py-1.5 mb-2">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground data-readout font-medium">
               {group.label}
             </span>
-            <div className="flex-1 h-px bg-border/15" />
-            <span className="text-[10px] text-muted-foreground/60 data-readout">
+            <div className="flex-1 h-px bg-white/[0.06]" />
+            <span className="text-[10px] text-muted-foreground/60 data-readout tabular-nums">
               {group.items.length}
             </span>
           </div>

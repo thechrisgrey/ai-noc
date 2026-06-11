@@ -9,15 +9,15 @@ export function TrendingPanel({ items }: { items: FeedItemWithBookmark[] }) {
 
   return (
     <div>
-      <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-2.5 data-readout flex items-center gap-1">
-        <TrendingUp size={9} />
+      <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-3 data-readout flex items-center gap-1.5">
+        <TrendingUp size={10} className="text-primary" />
         TRENDING
       </div>
       <div className="flex flex-wrap gap-1.5">
         {trending.map(({ word }) => (
           <span
             key={word}
-            className="text-[10px] px-2 py-0.5 rounded-full border border-primary/10 text-primary/50 data-readout hover:text-primary/80 hover:border-primary/20 transition-colors cursor-default"
+            className="text-[10px] px-2.5 py-1 rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground data-readout hover:text-primary hover:border-primary/25 hover:bg-primary/10 transition-colors cursor-default"
           >
             {word}
           </span>

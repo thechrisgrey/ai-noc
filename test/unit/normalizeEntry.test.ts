@@ -33,4 +33,27 @@ describe("normalizeEntry", () => {
     );
     expect(item!.description).toHaveLength(500);
   });
+
+  it("strips HTML tags and decodes entities in title and description", () => {
+    const item = normalizeEntry(
+      {
+        title: "Release &amp; notes",
+        content:
+          '<p><strong>Release:</strong> <a href="https://example.com">v1.0</a></p><ul><li>Tools &lt;ask&gt; questions</li></ul>',
+      },
+      source,
+      nowISO,
+    );
+    expect(item!.title).toBe("Release & notes");
+    expect(item!.description).toBe("Release: v1.0 Tools <ask> questions");
+  });
+
+  it("returns null description when content is only markup", () => {
+    const item = normalizeEntry(
+      { title: "Markup only", content: "<p>  </p><br/>" },
+      source,
+      nowISO,
+    );
+    expect(item!.description).toBeNull();
+  });
 });

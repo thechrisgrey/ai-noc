@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
 import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -23,6 +23,8 @@ import {
 } from "@/components/dashboard";
 
 // ─── Main Dashboard ──────────────────────────────────────────────
+
+const SignalField = lazy(() => import("@/components/three/SignalField"));
 
 type FeedPage = { items: FeedItemWithBookmark[]; nextCursor: string | null };
 
@@ -311,88 +313,96 @@ export default function Dashboard() {
   // ── Render ──
   return (
     <div className="h-screen flex flex-col scanlines grid-bg">
-      <Header
-        stats={stats}
-        showBookmarks={showBookmarks}
-        setShowBookmarks={setShowBookmarks}
-        notificationsEnabled={notificationsEnabled}
-        setNotificationsEnabled={setNotificationsEnabled}
-        refreshMutation={refreshMutation}
-        bookmarksCount={bookmarksList.length}
-      />
+      <Suspense fallback={null}>
+        <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
+          <SignalField />
+        </div>
+      </Suspense>
 
-      <MobileCategoryBar
-        stats={stats}
-        selectedCategory={selectedCategory}
-        showBookmarks={showBookmarks}
-        onSelectCategory={handleSelectCategory}
-      />
-
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar
+      <div className="relative z-10 flex-1 flex flex-col min-h-0">
+        <Header
           stats={stats}
-          selectedCategory={selectedCategory}
-          selectedSource={selectedSource}
           showBookmarks={showBookmarks}
-          watchlistsData={watchlistsData}
-          onSelectCategory={handleSelectCategory}
-          onSelectSource={handleSelectSource}
-          onApplyWatchlist={handleApplyWatchlist}
-          onDeleteWatchlist={(id) => deleteWatchlistMutation.mutate(id)}
+          setShowBookmarks={setShowBookmarks}
+          notificationsEnabled={notificationsEnabled}
+          setNotificationsEnabled={setNotificationsEnabled}
+          refreshMutation={refreshMutation}
+          bookmarksCount={bookmarksList.length}
         />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <BriefingPanel />
+        <MobileCategoryBar
+          stats={stats}
+          selectedCategory={selectedCategory}
+          showBookmarks={showBookmarks}
+          onSelectCategory={handleSelectCategory}
+        />
 
-          {/* KPI Row */}
-          <div className="flex-shrink-0 px-4 py-3 border-b border-border/20 bg-card/10">
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
-              <KpiCard label="TOTAL SIGNALS" value={statsError ? "--" : stats?.total || 0} icon={Radio} color="hsl(175,85%,50%)" />
-              <KpiCard label="HIGH PRIORITY" value={statsError ? "--" : stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(0,70%,55%)" />
-              <KpiCard label="MODEL RELEASES" value={statsError ? "--" : stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(175,85%,50%)" />
-              <KpiCard label="SOURCES ACTIVE" value={statsError ? "--" : sourceCount} icon={Activity} color="hsl(140,60%,50%)" />
-            </div>
-          </div>
-
-          <FeedToolbar
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            sortMode={sortMode}
-            setSortMode={setSortMode}
+        <div className="flex-1 flex overflow-hidden">
+          <Sidebar
+            stats={stats}
             selectedCategory={selectedCategory}
             selectedSource={selectedSource}
-            setSelectedSource={setSelectedSource}
             showBookmarks={showBookmarks}
-            hasActiveFilters={hasActiveFilters}
-            savingWatchlist={savingWatchlist}
-            setSavingWatchlist={setSavingWatchlist}
-            watchlistName={watchlistName}
-            setWatchlistName={setWatchlistName}
-            onSaveWatchlist={handleSaveWatchlist}
-            feedItemCount={feedItems.length}
-            stats={stats}
+            watchlistsData={watchlistsData}
             onSelectCategory={handleSelectCategory}
+            onSelectSource={handleSelectSource}
+            onApplyWatchlist={handleApplyWatchlist}
+            onDeleteWatchlist={(id) => deleteWatchlistMutation.mutate(id)}
           />
 
-          <FeedStream
-            feedItems={feedItems}
-            isLoading={isLoading}
-            isError={isError}
-            onRetry={refetch}
-            showBookmarks={showBookmarks}
-            sortMode={sortMode}
-            groupedItems={groupedItems}
-            breakingItems={breakingItems}
-            bookmarksList={bookmarksList}
-            loadMoreRef={loadMoreRef}
-            isFetchingNextPage={isFetchingNextPage}
-            newSignals={newSignals}
-            onDismissNewSignals={handleDismissNewSignals}
-            onToggleBookmark={handleToggleBookmark}
-          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <BriefingPanel />
+
+            {/* KPI Row */}
+            <div className="flex-shrink-0 px-5 py-4 border-b border-white/[0.04]">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <KpiCard label="TOTAL SIGNALS" value={statsError ? "--" : stats?.total || 0} icon={Radio} color="hsl(68,96%,58%)" />
+                <KpiCard label="HIGH PRIORITY" value={statsError ? "--" : stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(5,80%,62%)" />
+                <KpiCard label="MODEL RELEASES" value={statsError ? "--" : stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(68,95%,60%)" />
+                <KpiCard label="SOURCES ACTIVE" value={statsError ? "--" : sourceCount} icon={Activity} color="hsl(150,60%,55%)" />
+              </div>
+            </div>
+
+            <FeedToolbar
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              sortMode={sortMode}
+              setSortMode={setSortMode}
+              selectedCategory={selectedCategory}
+              selectedSource={selectedSource}
+              setSelectedSource={setSelectedSource}
+              showBookmarks={showBookmarks}
+              hasActiveFilters={hasActiveFilters}
+              savingWatchlist={savingWatchlist}
+              setSavingWatchlist={setSavingWatchlist}
+              watchlistName={watchlistName}
+              setWatchlistName={setWatchlistName}
+              onSaveWatchlist={handleSaveWatchlist}
+              feedItemCount={feedItems.length}
+              stats={stats}
+              onSelectCategory={handleSelectCategory}
+            />
+
+            <FeedStream
+              feedItems={feedItems}
+              isLoading={isLoading}
+              isError={isError}
+              onRetry={refetch}
+              showBookmarks={showBookmarks}
+              sortMode={sortMode}
+              groupedItems={groupedItems}
+              breakingItems={breakingItems}
+              bookmarksList={bookmarksList}
+              loadMoreRef={loadMoreRef}
+              isFetchingNextPage={isFetchingNextPage}
+              newSignals={newSignals}
+              onDismissNewSignals={handleDismissNewSignals}
+              onToggleBookmark={handleToggleBookmark}
+            />
+          </div>
+
+          <IntelPanel stats={stats} feedItems={feedItems} />
         </div>
-
-        <IntelPanel stats={stats} feedItems={feedItems} />
       </div>
     </div>
   );

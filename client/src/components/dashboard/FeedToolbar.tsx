@@ -39,24 +39,24 @@ export function FeedToolbar({
   feedItemCount,
 }: FeedToolbarProps) {
   return (
-    <div className="flex-shrink-0 px-4 py-2 border-b border-border/20 flex items-center gap-3">
+    <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-3">
       <div className="relative flex-1 max-w-md">
         <Search
           size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
         />
         <input
           type="search"
           placeholder="Search signals..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-9 pr-8 py-1.5 text-xs rounded border border-border/40 bg-card/20 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 data-readout"
+          className="w-full pl-9 pr-8 py-1.5 text-xs rounded-lg border border-white/[0.08] bg-white/[0.04] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 data-readout"
         />
         {searchQuery && (
           <button
             onClick={() => setSearchQuery("")}
             aria-label="Clear search"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
           >
             <X size={12} />
           </button>
@@ -67,7 +67,7 @@ export function FeedToolbar({
         {selectedSource !== "all" && (
           <button
             onClick={() => setSelectedSource("all")}
-            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 data-readout hover:bg-primary/15 transition-colors"
+            className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/25 data-readout hover:bg-primary/20 transition-colors"
           >
             {getSourceMeta(selectedSource).label}
             <X size={10} />
@@ -76,10 +76,10 @@ export function FeedToolbar({
         <button
           onClick={() => setSortMode(sortMode === "time" ? "priority" : "time")}
           aria-pressed={sortMode === "priority"}
-          className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded border data-readout transition-colors ${
+          className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border data-readout transition-colors ${
             sortMode === "priority"
-              ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-              : "text-muted-foreground/50 border-border/30 hover:text-foreground"
+              ? "bg-primary/15 text-primary border-primary/25"
+              : "bg-white/[0.04] border-white/[0.08] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground"
           }`}
         >
           <ArrowUpDown size={10} />
@@ -88,38 +88,39 @@ export function FeedToolbar({
         {hasActiveFilters && !savingWatchlist && (
           <button
             onClick={() => setSavingWatchlist(true)}
-            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-primary/20 text-primary/60 hover:text-primary hover:bg-primary/10 data-readout transition-colors"
+            className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.04] text-primary hover:bg-primary/10 hover:border-primary/25 data-readout transition-colors"
           >
             <Bookmark size={10} />
             SAVE VIEW
           </button>
         )}
         {savingWatchlist && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <input
               type="text"
               placeholder="Watchlist name..."
               value={watchlistName}
               onChange={(e) => setWatchlistName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSaveWatchlist()}
-              className="text-[10px] px-2 py-1 rounded border border-primary/30 bg-card/30 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 data-readout w-32"
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.04] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 data-readout w-32"
               autoFocus
             />
             <button
               onClick={onSaveWatchlist}
-              className="text-[10px] px-2 py-1 rounded bg-primary/20 text-primary data-readout hover:bg-primary/30"
+              className="text-[10px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium data-readout transition-all hover:brightness-110"
             >
               SAVE
             </button>
             <button
               onClick={() => { setSavingWatchlist(false); setWatchlistName(""); }}
-              className="text-muted-foreground/40 hover:text-foreground"
+              aria-label="Cancel saving watchlist"
+              className="text-muted-foreground/60 hover:text-foreground"
             >
               <X size={10} />
             </button>
           </div>
         )}
-        <div className="flex items-center gap-1 text-[10px] text-muted-foreground/40 data-readout">
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground data-readout tabular-nums">
           <Filter size={10} />
           <span>{feedItemCount} signals</span>
         </div>
@@ -140,7 +141,7 @@ export function MobileCategoryBar({
   onSelectCategory: (cat: Category) => void;
 }) {
   return (
-    <div className="lg:hidden flex-shrink-0 border-b border-border/30 px-3 py-2 overflow-x-auto hide-scrollbar bg-card/20">
+    <div className="lg:hidden flex-shrink-0 border-b border-white/[0.06] px-3 py-2 overflow-x-auto hide-scrollbar">
       <div className="flex gap-1.5">
         {CATEGORIES.map((cat) => {
           const count =
@@ -154,14 +155,14 @@ export function MobileCategoryBar({
               key={cat.value}
               onClick={() => onSelectCategory(cat.value)}
               aria-current={isActive ? "true" : undefined}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] uppercase tracking-wider font-medium transition-all whitespace-nowrap ${
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.14em] font-medium transition-all whitespace-nowrap ${
                 isActive
-                  ? "bg-primary/15 text-primary border border-primary/25"
-                  : "text-muted-foreground border border-border/30 hover:text-foreground"
+                  ? "bg-primary/15 text-primary border-primary/25"
+                  : "text-muted-foreground border-transparent hover:bg-white/[0.05] hover:text-foreground"
               }`}
             >
               {cat.shortLabel}
-              <span className="data-readout opacity-50">{count}</span>
+              <span className="data-readout tabular-nums opacity-60">{count}</span>
             </button>
           );
         })}

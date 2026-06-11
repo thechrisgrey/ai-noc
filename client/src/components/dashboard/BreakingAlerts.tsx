@@ -8,14 +8,17 @@ export function BreakingAlerts({ items }: { items: FeedItemWithBookmark[] }) {
 
   return (
     <div>
-      <div className="text-[9px] uppercase tracking-wider text-red-400/60 mb-2.5 data-readout flex items-center gap-1">
-        <AlertTriangle size={9} />
+      <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-red-400/90 mb-2.5 data-readout flex items-center gap-1.5">
+        <AlertTriangle size={10} />
         BREAKING ALERTS
       </div>
       <div>
         {breaking.map((item) => (
-          <div key={item.id} className="py-2 border-b border-border/10 last:border-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
+          <div
+            key={item.id}
+            className="py-2 border-b border-white/[0.06] last:border-0"
+          >
+            <div className="flex items-center gap-1.5 mb-1">
               <span
                 className="text-[9px] data-readout"
                 style={{ color: getSourceMeta(item.source).color }}
@@ -26,7 +29,7 @@ export function BreakingAlerts({ items }: { items: FeedItemWithBookmark[] }) {
                 {timeAgo(item.publishedAt)}
               </span>
             </div>
-            <p className="text-[11px] text-foreground/50 leading-tight line-clamp-2">
+            <p className="text-[11px] text-foreground/75 leading-snug line-clamp-2">
               {item.title}
             </p>
           </div>

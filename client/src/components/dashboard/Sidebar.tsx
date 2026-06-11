@@ -26,10 +26,10 @@ export function Sidebar({
   onDeleteWatchlist,
 }: SidebarProps) {
   return (
-    <nav className="hidden lg:flex lg:flex-col w-52 flex-shrink-0 border-r border-border/50 bg-sidebar overflow-y-auto">
+    <nav className="hidden lg:flex lg:flex-col w-52 flex-shrink-0 border-r border-sidebar-border bg-sidebar overflow-y-auto">
       {/* Categories */}
-      <div className="p-3">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-2 px-2 data-readout">
+      <div className="p-3 space-y-0.5">
+        <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-2 px-2 data-readout">
           CATEGORIES
         </div>
         {CATEGORIES.map((cat) => {
@@ -45,20 +45,20 @@ export function Sidebar({
               key={cat.value}
               onClick={() => onSelectCategory(cat.value)}
               aria-current={isActive ? "true" : undefined}
-              className={`w-full flex items-center gap-2 px-2 py-2 rounded text-xs transition-all ${
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-all ${
                 isActive
-                  ? "bg-primary/10 text-primary border border-primary/20"
-                  : "text-muted-foreground hover:text-foreground hover:bg-card/50 border border-transparent"
+                  ? "bg-primary/[0.12] text-primary border border-primary/20"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05] border border-transparent"
               }`}
             >
               <CatIcon
                 size={14}
                 style={isActive ? { color: cat.color } : undefined}
               />
-              <span className="flex-1 text-left tracking-wider uppercase text-[10px] font-medium">
+              <span className="flex-1 text-left tracking-[0.14em] uppercase text-[10px] font-medium">
                 {cat.label}
               </span>
-              <span className="data-readout text-[10px] opacity-50">
+              <span className="data-readout text-[10px] tabular-nums text-right opacity-60">
                 {count}
               </span>
             </button>
@@ -67,8 +67,8 @@ export function Sidebar({
       </div>
 
       {/* Sources */}
-      <div className="p-3 border-t border-border/20 flex-1">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-2 px-2 data-readout">
+      <div className="p-3 space-y-0.5 border-t border-white/[0.06] flex-1">
+        <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-2 px-2 data-readout">
           SOURCES
         </div>
         {Object.entries(stats?.bySource || {})
@@ -83,10 +83,10 @@ export function Sidebar({
                 key={source}
                 onClick={() => onSelectSource(source)}
                 aria-current={isActive ? "true" : undefined}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-[10px] transition-all ${
+                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[10px] transition-all ${
                   isActive
-                    ? "bg-primary/10 border border-primary/20"
-                    : "border border-transparent hover:bg-card/50"
+                    ? "bg-primary/[0.12] border border-primary/20"
+                    : "border border-transparent hover:bg-white/[0.05]"
                 }`}
               >
                 <SrcIcon size={11} style={{ color: info.color }} />
@@ -99,7 +99,7 @@ export function Sidebar({
                 >
                   {info.label}
                 </span>
-                <span className="data-readout opacity-40">{count}</span>
+                <span className="data-readout tabular-nums text-right opacity-60">{count}</span>
               </button>
             );
           })}
@@ -107,14 +107,14 @@ export function Sidebar({
 
       {/* Watchlists */}
       {watchlistsData.length > 0 && (
-        <div className="p-3 border-t border-border/20">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-2 px-2 data-readout">
+        <div className="p-3 space-y-0.5 border-t border-white/[0.06]">
+          <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-2 px-2 data-readout">
             WATCHLISTS
           </div>
           {watchlistsData.map((wl: any) => (
             <div
               key={wl.id}
-              className="group flex items-center gap-1 px-2 py-1.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-card/50 cursor-pointer transition-all"
+              className="group flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] cursor-pointer transition-all"
             >
               <button
                 onClick={() => onApplyWatchlist(wl)}
@@ -125,7 +125,7 @@ export function Sidebar({
               <button
                 onClick={() => onDeleteWatchlist(wl.id)}
                 aria-label={`Delete watchlist ${wl.name}`}
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-muted-foreground/60 hover:text-destructive transition-all"
               >
                 <X size={10} />
               </button>

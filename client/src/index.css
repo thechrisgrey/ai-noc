@@ -2,9 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
-
-/* TACTICAL COMMAND CENTER THEME — always dark */
+/* OBSIDIAN SIGNAL THEME — always dark */
 :root {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -12,57 +10,57 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  /* Deep dark surfaces */
-  --background: 210 15% 6%;
-  --foreground: 180 10% 88%;
+  /* Near-black warm surfaces */
+  --background: 60 6% 4%;
+  --foreground: 45 10% 92%;
 
-  --border: 180 8% 14%;
-  --card: 210 12% 8%;
-  --card-foreground: 180 10% 88%;
-  --card-border: 180 8% 12%;
+  --border: 50 6% 13%;
+  --card: 60 5% 7%;
+  --card-foreground: 45 10% 92%;
+  --card-border: 50 6% 11%;
 
-  --sidebar: 210 15% 7%;
-  --sidebar-foreground: 180 10% 88%;
-  --sidebar-border: 180 8% 14%;
-  --sidebar-primary: 175 85% 40%;
-  --sidebar-primary-foreground: 210 15% 6%;
-  --sidebar-accent: 180 10% 12%;
-  --sidebar-accent-foreground: 180 10% 88%;
-  --sidebar-ring: 175 85% 40%;
+  --sidebar: 60 6% 5%;
+  --sidebar-foreground: 45 10% 92%;
+  --sidebar-border: 50 6% 12%;
+  --sidebar-primary: 68 96% 58%;
+  --sidebar-primary-foreground: 65 10% 6%;
+  --sidebar-accent: 60 5% 10%;
+  --sidebar-accent-foreground: 45 10% 92%;
+  --sidebar-ring: 68 96% 58%;
 
-  --popover: 210 12% 10%;
-  --popover-foreground: 180 10% 88%;
-  --popover-border: 180 8% 14%;
+  --popover: 60 5% 9%;
+  --popover-foreground: 45 10% 92%;
+  --popover-border: 50 6% 14%;
 
-  /* Cyan/teal primary — tactical accent */
-  --primary: 175 85% 40%;
-  --primary-foreground: 210 15% 6%;
+  /* Acid lime primary — the signature */
+  --primary: 68 96% 58%;
+  --primary-foreground: 65 10% 6%;
 
-  --secondary: 210 10% 14%;
-  --secondary-foreground: 180 10% 88%;
+  --secondary: 60 4% 12%;
+  --secondary-foreground: 45 10% 92%;
 
-  --muted: 210 10% 16%;
-  --muted-foreground: 180 5% 50%;
+  --muted: 60 4% 14%;
+  --muted-foreground: 45 6% 56%;
 
-  --accent: 175 30% 14%;
-  --accent-foreground: 180 10% 88%;
+  --accent: 68 40% 12%;
+  --accent-foreground: 45 10% 92%;
 
-  --destructive: 0 72% 50%;
+  --destructive: 5 75% 56%;
   --destructive-foreground: 0 0% 98%;
 
-  --input: 180 8% 20%;
-  --ring: 175 85% 40%;
+  --input: 50 6% 18%;
+  --ring: 68 96% 58%;
 
-  /* Chart colors — tactical palette */
-  --chart-1: 175 85% 45%;
-  --chart-2: 140 60% 45%;
-  --chart-3: 45 80% 55%;
-  --chart-4: 280 60% 55%;
-  --chart-5: 0 70% 55%;
+  /* Chart colors — lime / amber / orange / violet / sky */
+  --chart-1: 68 96% 58%;
+  --chart-2: 38 95% 60%;
+  --chart-3: 24 90% 58%;
+  --chart-4: 270 60% 68%;
+  --chart-5: 200 80% 60%;
 
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --radius: 0.375rem;
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
+  --radius: 1rem;
 
   --shadow-2xs: 0 0 0 0 transparent;
   --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
@@ -100,40 +98,40 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
-  --background: 210 15% 6%;
-  --foreground: 180 10% 88%;
-  --border: 180 8% 14%;
-  --card: 210 12% 8%;
-  --card-foreground: 180 10% 88%;
-  --card-border: 180 8% 12%;
-  --sidebar: 210 15% 7%;
-  --sidebar-foreground: 180 10% 88%;
-  --sidebar-border: 180 8% 14%;
-  --sidebar-primary: 175 85% 40%;
-  --sidebar-primary-foreground: 210 15% 6%;
-  --sidebar-accent: 180 10% 12%;
-  --sidebar-accent-foreground: 180 10% 88%;
-  --sidebar-ring: 175 85% 40%;
-  --popover: 210 12% 10%;
-  --popover-foreground: 180 10% 88%;
-  --popover-border: 180 8% 14%;
-  --primary: 175 85% 40%;
-  --primary-foreground: 210 15% 6%;
-  --secondary: 210 10% 14%;
-  --secondary-foreground: 180 10% 88%;
-  --muted: 210 10% 16%;
-  --muted-foreground: 180 5% 50%;
-  --accent: 175 30% 14%;
-  --accent-foreground: 180 10% 88%;
-  --destructive: 0 72% 50%;
+  --background: 60 6% 4%;
+  --foreground: 45 10% 92%;
+  --border: 50 6% 13%;
+  --card: 60 5% 7%;
+  --card-foreground: 45 10% 92%;
+  --card-border: 50 6% 11%;
+  --sidebar: 60 6% 5%;
+  --sidebar-foreground: 45 10% 92%;
+  --sidebar-border: 50 6% 12%;
+  --sidebar-primary: 68 96% 58%;
+  --sidebar-primary-foreground: 65 10% 6%;
+  --sidebar-accent: 60 5% 10%;
+  --sidebar-accent-foreground: 45 10% 92%;
+  --sidebar-ring: 68 96% 58%;
+  --popover: 60 5% 9%;
+  --popover-foreground: 45 10% 92%;
+  --popover-border: 50 6% 14%;
+  --primary: 68 96% 58%;
+  --primary-foreground: 65 10% 6%;
+  --secondary: 60 4% 12%;
+  --secondary-foreground: 45 10% 92%;
+  --muted: 60 4% 14%;
+  --muted-foreground: 45 6% 56%;
+  --accent: 68 40% 12%;
+  --accent-foreground: 45 10% 92%;
+  --destructive: 5 75% 56%;
   --destructive-foreground: 0 0% 98%;
-  --input: 180 8% 20%;
-  --ring: 175 85% 40%;
-  --chart-1: 175 85% 45%;
-  --chart-2: 140 60% 45%;
-  --chart-3: 45 80% 55%;
-  --chart-4: 280 60% 55%;
-  --chart-5: 0 70% 55%;
+  --input: 50 6% 18%;
+  --ring: 68 96% 58%;
+  --chart-1: 68 96% 58%;
+  --chart-2: 38 95% 60%;
+  --chart-3: 24 90% 58%;
+  --chart-4: 270 60% 68%;
+  --chart-5: 200 80% 60%;
   --shadow-2xs: 0 0 0 0 transparent;
   --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
   --shadow-sm: 0 1px 3px rgba(0,0,0,.5);
@@ -170,55 +168,72 @@
   }
 }
 
-/* Scanline overlay effect */
-.scanlines::after {
+/* Grain overlay — film noise atmosphere (replaces scanlines) */
+.scanlines::after,
+.grain-overlay {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 255, 200, 0.015) 2px,
-    rgba(0, 255, 200, 0.015) 4px
-  );
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
 }
 
-/* Grid background effect */
+/* Ambient glow background — lime top-right, amber bottom-left (replaces grid) */
 .grid-bg {
   background-image:
-    linear-gradient(rgba(0, 200, 180, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 200, 180, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
+    radial-gradient(40vw 40vw at 88% -4%, hsla(68, 96%, 58%, 0.05), transparent 70%),
+    radial-gradient(50vw 50vw at 8% 104%, hsla(30, 90%, 55%, 0.04), transparent 70%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
-/* Glow effects */
+/* Standalone fixed overlay variant of the ambient glow */
+.ambient-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(40vw 40vw at 88% -4%, hsla(68, 96%, 58%, 0.05), transparent 70%),
+    radial-gradient(50vw 50vw at 8% 104%, hsla(30, 90%, 55%, 0.04), transparent 70%);
+  background-repeat: no-repeat;
+}
+
+/* Glow effects — lime signature */
 .glow-cyan {
-  box-shadow: 0 0 8px rgba(0, 200, 180, 0.3), 0 0 20px rgba(0, 200, 180, 0.1);
+  box-shadow: 0 0 8px hsla(68, 96%, 58%, 0.25), 0 0 20px hsla(68, 96%, 58%, 0.08);
 }
 
 .glow-text-cyan {
-  text-shadow: 0 0 8px rgba(0, 200, 180, 0.5);
+  text-shadow: 0 0 8px hsla(68, 96%, 58%, 0.4);
 }
 
 .glow-green {
-  box-shadow: 0 0 8px rgba(0, 200, 100, 0.3), 0 0 20px rgba(0, 200, 100, 0.1);
+  box-shadow: 0 0 8px rgba(0, 200, 100, 0.2), 0 0 20px rgba(0, 200, 100, 0.07);
 }
 
 .glow-red {
-  box-shadow: 0 0 8px rgba(255, 60, 60, 0.3), 0 0 20px rgba(255, 60, 60, 0.1);
+  box-shadow: 0 0 8px rgba(255, 60, 60, 0.2), 0 0 20px rgba(255, 60, 60, 0.07);
 }
 
 .glow-amber {
-  box-shadow: 0 0 8px rgba(255, 180, 0, 0.3), 0 0 20px rgba(255, 180, 0, 0.1);
+  box-shadow: 0 0 8px rgba(255, 180, 0, 0.2), 0 0 20px rgba(255, 180, 0, 0.07);
+}
+
+/* Heat meter — priority gradient with soft glow */
+.heat-bar {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, hsl(68, 95%, 60%), hsl(38, 95%, 60%), hsl(5, 80%, 58%));
+  box-shadow: 0 0 8px hsla(38, 95%, 60%, 0.35);
 }
 
 /* Breaking news pulse */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 4px rgba(255, 60, 60, 0.3); }
-  50% { box-shadow: 0 0 12px rgba(255, 60, 60, 0.6), 0 0 24px rgba(255, 60, 60, 0.2); }
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 60, 60, 0.25); }
+  50% { box-shadow: 0 0 10px rgba(255, 60, 60, 0.45), 0 0 18px rgba(255, 60, 60, 0.15); }
 }
 
 .pulse-breaking {
@@ -248,7 +263,7 @@
 }
 
 .skeleton-shimmer {
-  background: linear-gradient(90deg, hsl(210, 12%, 8%) 25%, hsl(210, 12%, 12%) 50%, hsl(210, 12%, 8%) 75%);
+  background: linear-gradient(90deg, hsl(60, 5%, 7%) 25%, hsl(60, 5%, 11%) 50%, hsl(60, 5%, 7%) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
@@ -298,16 +313,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(210, 15%, 6%);
+  background: hsl(60, 6%, 4%);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(180, 8%, 20%);
+  background: hsl(50, 6%, 18%);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(175, 85%, 40%);
+  background: hsl(68, 96%, 58%);
 }
 
 /* Utility for hiding scrollbar */
@@ -320,19 +335,19 @@
 }
 
 /* Category colors */
-.cat-model-release { color: hsl(175, 85%, 50%); }
-.cat-research { color: hsl(280, 70%, 65%); }
-.cat-funding { color: hsl(45, 90%, 60%); }
-.cat-product { color: hsl(200, 80%, 55%); }
-.cat-policy { color: hsl(0, 70%, 60%); }
-.cat-infrastructure { color: hsl(140, 60%, 50%); }
+.cat-model-release { color: hsl(68, 95%, 60%); }
+.cat-research { color: hsl(270, 65%, 70%); }
+.cat-funding { color: hsl(38, 95%, 60%); }
+.cat-product { color: hsl(200, 85%, 62%); }
+.cat-policy { color: hsl(5, 80%, 62%); }
+.cat-infrastructure { color: hsl(150, 60%, 55%); }
 
-.cat-bg-model-release { background-color: hsla(175, 85%, 50%, 0.12); }
-.cat-bg-research { background-color: hsla(280, 70%, 65%, 0.12); }
-.cat-bg-funding { background-color: hsla(45, 90%, 60%, 0.12); }
-.cat-bg-product { background-color: hsla(200, 80%, 55%, 0.12); }
-.cat-bg-policy { background-color: hsla(0, 70%, 60%, 0.12); }
-.cat-bg-infrastructure { background-color: hsla(140, 60%, 50%, 0.12); }
+.cat-bg-model-release { background-color: hsla(68, 95%, 60%, 0.12); }
+.cat-bg-research { background-color: hsla(270, 65%, 70%, 0.12); }
+.cat-bg-funding { background-color: hsla(38, 95%, 60%, 0.12); }
+.cat-bg-product { background-color: hsla(200, 85%, 62%, 0.12); }
+.cat-bg-policy { background-color: hsla(5, 80%, 62%, 0.12); }
+.cat-bg-infrastructure { background-color: hsla(150, 60%, 55%, 0.12); }
 
 @layer utilities {
   input[type="search"]::-webkit-search-cancel-button {

@@ -10,6 +10,10 @@ export default defineConfig({
     setupFiles: ["./test/setup.ts"],
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     testTimeout: 20_000,
+    coverage: {
+      include: ["server/**", "shared/**", "client/src/**"],
+      exclude: ["client/src/components/ui/**"],
+    },
   },
   resolve: {
     alias: {

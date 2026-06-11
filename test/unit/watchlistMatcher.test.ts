@@ -92,6 +92,17 @@ describe("matchesWatchlist truth table", () => {
     expect(matchesWatchlist(item, wl, vec)).toBe(true);
   });
 
+  it("semantic path matches when the item embedding is a pgvector string literal", () => {
+    // Regression: raw-SQL load paths surface the embedding as "[..]" text. The
+    // old Array.isArray gate silently dropped the semantic hit for these rows.
+    const vec = [1, 0, 0];
+    const item = makeItem({
+      embedding: "[1,0,0]" as unknown as FeedItem["embedding"],
+    });
+    const wl = makeWatchlist({ search: "totally-absent-term" });
+    expect(matchesWatchlist(item, wl, vec)).toBe(true);
+  });
+
   it("semantic path misses when vectors are orthogonal", () => {
     const item = makeItem({ embedding: [1, 0, 0] as unknown as FeedItem["embedding"] });
     const wl = makeWatchlist({ search: "totally-absent-term" });

@@ -1,6 +1,6 @@
 import type { FeedItem } from "@shared/schema";
 import { storage } from "./storage";
-import { cosineSim } from "./embeddings";
+import { cosineSim, toVector } from "./embeddings";
 
 const SIMILARITY_THRESHOLD = 0.35;
 // Cosine threshold for embedding-based clustering; same-source pairs need a
@@ -34,20 +34,6 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 /** Jaccard similarity between two strings based on trigrams */
 export function similarity(a: string, b: string): number {
   return jaccard(trigrams(a), trigrams(b));
-}
-
-/**
- * Normalize an item's embedding to number[] | null. Drizzle's vector type
- * returns an array; some drivers may surface the pgvector text literal.
- */
-function embeddingOf(item: FeedItem): number[] | null {
-  const e = item.embedding as unknown;
-  if (Array.isArray(e) && e.length > 0) return e as number[];
-  if (typeof e === "string" && e.length > 2) {
-    const parsed = e.slice(1, -1).split(",").map(Number);
-    return parsed.every((n) => Number.isFinite(n)) ? parsed : null;
-  }
-  return null;
 }
 
 let isClustering = false;
@@ -94,12 +80,12 @@ export async function clusterRecentItems(): Promise<void> {
       }
 
       const itemTri = trigramCache.get(item.id)!;
-      const itemVec = embeddingOf(item);
+      const itemVec = toVector(item.embedding);
 
       for (const other of sorted) {
         if (assigned.has(other.id)) continue;
 
-        const otherVec = embeddingOf(other);
+        const otherVec = toVector(other.embedding);
         let matched = false;
         if (itemVec && otherVec) {
           // Both embedded: cosine drives clustering across all sources; a

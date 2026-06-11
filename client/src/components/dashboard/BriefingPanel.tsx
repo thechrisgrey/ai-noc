@@ -21,13 +21,23 @@ interface ArchivedBriefing {
   kind: string;
 }
 
-type ArchiveFilter = "all" | "hourly" | "daily_digest";
+type ArchiveFilter = "all" | "daily_skim" | "weekly_heavy" | "hourly";
 
 const ARCHIVE_FILTERS: { value: ArchiveFilter; label: string }[] = [
   { value: "all", label: "ALL" },
-  { value: "hourly", label: "HOURLY" },
-  { value: "daily_digest", label: "DIGEST" },
+  { value: "daily_skim", label: "SKIM" },
+  { value: "weekly_heavy", label: "WEEKLY" },
+  { value: "hourly", label: "PULSE" },
 ];
+
+// Badge label + accent per briefing kind. The two-tier brief kinds are the
+// product (accented); 'hourly'/'daily_digest' are legacy/manual.
+const KIND_BADGE: Record<string, { label: string; primary: boolean }> = {
+  daily_skim: { label: "SKIM", primary: true },
+  weekly_heavy: { label: "WEEKLY", primary: true },
+  daily_digest: { label: "DIGEST", primary: false },
+  hourly: { label: "PULSE", primary: false },
+};
 
 /** Render briefing content as paragraphs, styling '## ' lines as micro-caps
  * section headers. No markdown dependency — a simple line-split renderer. */
@@ -106,15 +116,20 @@ function ArchivePanel() {
           className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2"
         >
           <div className="flex items-center gap-2 text-[9px] data-readout text-muted-foreground/70">
-            <span
-              className={`px-1.5 py-0.5 rounded uppercase tracking-[0.14em] ${
-                b.kind === "daily_digest"
-                  ? "bg-primary/[0.12] text-primary"
-                  : "bg-white/[0.06] text-muted-foreground"
-              }`}
-            >
-              {b.kind === "daily_digest" ? "DIGEST" : "HOURLY"}
-            </span>
+            {(() => {
+              const badge = KIND_BADGE[b.kind] ?? { label: b.kind.toUpperCase(), primary: false };
+              return (
+                <span
+                  className={`px-1.5 py-0.5 rounded uppercase tracking-[0.14em] ${
+                    badge.primary
+                      ? "bg-primary/[0.12] text-primary"
+                      : "bg-white/[0.06] text-muted-foreground"
+                  }`}
+                >
+                  {badge.label}
+                </span>
+              );
+            })()}
             <span className="tabular-nums">{timeAgo(b.generatedAt)}</span>
             <span className="ml-auto tabular-nums">{b.itemCount} SIGNALS</span>
           </div>

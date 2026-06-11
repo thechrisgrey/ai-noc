@@ -7,7 +7,7 @@ import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
 import { fetchAllFeeds, probeFeedUrl, seedDemoData, type FetchResult } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
-import { generateDailyDigest } from "./digest";
+import { generateBrief, type BriefKind } from "./brief";
 import { deliverDigest } from "./deliver";
 import { clearWatchlistEmbeddingCache } from "./watchlistMatcher";
 import { validateSourceInput, SOURCE_CATEGORIES } from "./sourceValidation";
@@ -108,17 +108,19 @@ export async function registerRoutes(
   // Try fetching real feeds in background (don't block startup)
   fetchAllFeeds()
     .then((result) => broadcastFetchResults(result))
-    .then(() => generateBriefing().catch(err => console.error("[Briefing] Initial generation failed:", err.message)))
     .catch(err => console.error("[Routes] Initial feed fetch failed:", err.message));
 
-  // Generate briefing every hour
-  setInterval(() => {
-    generateBriefing().catch(err => console.error("[Briefing] Hourly generation failed:", err.message));
-  }, 60 * 60 * 1000);
+  // The legacy hourly executive briefing is demoted to a manual workshop pulse:
+  // it is an unpersonalized top-10-by-priority summary that contradicts the
+  // "ruthlessly condensed daily brief" thesis and burns Bedrock every hour.
+  // It is no longer auto-generated — trigger it on demand via
+  // POST /api/briefing/regenerate when the workshop pulse is wanted.
 
-  // Daily digest: self-rescheduling timer that fires at the top of the
-  // DIGEST_HOUR_UTC hour, generates the digest, and delivers it. An empty
-  // DIGEST_HOUR_UTC disables the schedule entirely.
+  // Two-tier brief schedule: a self-rescheduling timer fires at the top of the
+  // DIGEST_HOUR_UTC hour. It DRAFTS the daily skim every day and the weekly
+  // heavy on Mondays (UTC) — it never auto-sends. The owner reviews and edits
+  // each draft, then approves it (POST /api/brief/:id/approve) to ship it. An
+  // empty DIGEST_HOUR_UTC disables the schedule entirely.
   const digestHourRaw = process.env.DIGEST_HOUR_UTC ?? "12";
   if (digestHourRaw.trim() !== "") {
     const digestHour = parseInt(digestHourRaw, 10);
@@ -131,28 +133,33 @@ export async function registerRoutes(
         return next.getTime() - now.getTime();
       };
 
-      const runDigest = async () => {
+      const runBriefSchedule = async () => {
         try {
-          // Guard against a restart double-fire: skip if the latest digest is
-          // less than 20h old.
-          const latest = await storage.getLatestBriefing("daily_digest");
-          const recentlyRan =
-            latest &&
-            Date.now() - new Date(latest.generatedAt).getTime() < 20 * 60 * 60 * 1000;
-          if (!recentlyRan) {
-            const content = await generateDailyDigest();
-            if (content) await deliverDigest(content);
+          // Restart double-fire guard: skip the skim if one was drafted < 20h ago.
+          const latestSkim = await storage.getLatestBriefing("daily_skim");
+          const skimRecent =
+            latestSkim &&
+            Date.now() - new Date(latestSkim.generatedAt).getTime() < 20 * 60 * 60 * 1000;
+          if (!skimRecent) await generateBrief("daily_skim");
+
+          // Weekly heavy on Mondays, guarded to roughly once per week.
+          if (new Date().getUTCDay() === 1) {
+            const latestWeekly = await storage.getLatestBriefing("weekly_heavy");
+            const weeklyRecent =
+              latestWeekly &&
+              Date.now() - new Date(latestWeekly.generatedAt).getTime() < 6 * 24 * 60 * 60 * 1000;
+            if (!weeklyRecent) await generateBrief("weekly_heavy");
           }
         } catch (err) {
-          console.error("[Digest] Scheduled run failed:", (err as Error).message);
+          console.error("[Brief] Scheduled draft failed:", (err as Error).message);
         } finally {
-          setTimeout(runDigest, msUntilNextDigestHour());
+          setTimeout(runBriefSchedule, msUntilNextDigestHour());
         }
       };
 
-      setTimeout(runDigest, msUntilNextDigestHour());
+      setTimeout(runBriefSchedule, msUntilNextDigestHour());
     } else {
-      console.error(`[Digest] Invalid DIGEST_HOUR_UTC "${digestHourRaw}" — digest disabled`);
+      console.error(`[Brief] Invalid DIGEST_HOUR_UTC "${digestHourRaw}" — brief schedule disabled`);
     }
   }
 
@@ -506,10 +513,10 @@ export async function registerRoutes(
     }
   });
 
-  // Briefing archive: filter by kind (hourly | daily_digest), clamp the limit.
+  // Briefing archive: filter by kind, clamp the limit.
   app.get("/api/briefings", async (req, res) => {
     try {
-      const validKinds = ["hourly", "daily_digest"];
+      const validKinds = ["hourly", "daily_digest", "daily_skim", "weekly_heavy"];
       const { kind, limit } = req.query;
       const safeKind = validKinds.includes(kind as string) ? (kind as string) : undefined;
       const safeLimit = Math.max(1, Math.min(parseInt(limit as string) || 20, 50));
@@ -517,6 +524,109 @@ export async function registerRoutes(
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch briefings" });
+    }
+  });
+
+  // ── Two-tier brief: draft → review/edit → approve & send ──
+
+  // Latest draft awaiting the owner's review (the approval queue). Returns null
+  // when there is nothing pending.
+  app.get("/api/brief/draft", async (_req, res) => {
+    try {
+      const draft = await storage.getLatestDraft();
+      res.json(draft ?? null);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch draft brief" });
+    }
+  });
+
+  // Generate a fresh draft on demand. Body { kind?: 'daily_skim'|'weekly_heavy' }.
+  app.post("/api/brief/generate", async (req, res) => {
+    try {
+      const kind: BriefKind =
+        (req.body?.kind as string) === "weekly_heavy" ? "weekly_heavy" : "daily_skim";
+      const brief = await generateBrief(kind);
+      if (!brief) {
+        return res.status(503).json({ error: "Not enough signal to draft a brief" });
+      }
+      res.status(201).json(brief);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to generate brief" });
+    }
+  });
+
+  // Edit a draft's subject/body in the workshop before approval. Drafts only.
+  app.patch("/api/brief/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+      const existing = await storage.getBriefingById(id);
+      if (!existing) return res.status(404).json({ error: "Brief not found" });
+      if (existing.status !== "draft") {
+        return res.status(409).json({ error: "Only drafts can be edited" });
+      }
+
+      const patch: { subject?: string; content?: string } = {};
+      const { subject, content } = req.body ?? {};
+      if (subject !== undefined) {
+        // Reject CR/LF: the subject becomes an SES email header, where a newline
+        // would enable header (CRLF) injection.
+        if (typeof subject !== "string" || subject.length > 200 || /[\r\n]/.test(subject)) {
+          return res.status(400).json({ error: "Invalid subject" });
+        }
+        patch.subject = subject;
+      }
+      if (content !== undefined) {
+        if (typeof content !== "string" || content.trim() === "" || content.length > 20000) {
+          return res.status(400).json({ error: "Invalid content" });
+        }
+        patch.content = content;
+      }
+      if (patch.subject === undefined && patch.content === undefined) {
+        return res.status(400).json({ error: "Nothing to update" });
+      }
+      const updated = await storage.updateBriefing(id, patch);
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update brief" });
+    }
+  });
+
+  // Approve a draft: deliver it via SES (with its reviewed subject), then mark
+  // it sent. This is the human-in-the-loop send gate — nothing ships without it.
+  app.post("/api/brief/:id/approve", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+      const brief = await storage.getBriefingById(id);
+      if (!brief) return res.status(404).json({ error: "Brief not found" });
+      if (brief.status !== "draft") {
+        return res.status(409).json({ error: "Brief is not an editable draft" });
+      }
+
+      // Atomically claim (draft → sending). A lost race or already-claimed brief
+      // returns undefined; we deliver the FRESH claimed row, never a stale read.
+      const claimed = await storage.claimDraftForSend(id);
+      if (!claimed) {
+        return res.status(409).json({ error: "Brief is already being sent or was sent" });
+      }
+
+      const delivered = await deliverDigest(claimed.content, claimed.subject ?? undefined);
+      if (!delivered) {
+        // Release the claim so the owner can fix and retry.
+        await storage.updateBriefing(id, { status: "draft" });
+        return res
+          .status(502)
+          .json({ error: "Delivery failed — no channel succeeded or the send was rejected" });
+      }
+
+      const updated = await storage.updateBriefing(id, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to approve brief" });
     }
   });
 

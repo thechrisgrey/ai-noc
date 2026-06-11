@@ -6,7 +6,7 @@ import {
   type InvokeModelCommandInput,
   type InvokeModelCommandOutput,
 } from "@aws-sdk/client-bedrock-runtime";
-import { cosineSim, embedText, embedMany } from "../../server/embeddings";
+import { cosineSim, embedText, embedMany, toVector } from "../../server/embeddings";
 
 const bedrockMock = mockClient(BedrockRuntimeClient);
 
@@ -40,6 +40,36 @@ describe("cosineSim", () => {
   it("returns 0 for mismatched lengths or zero vectors", () => {
     expect(cosineSim([1, 2], [1, 2, 3])).toBe(0);
     expect(cosineSim([0, 0], [1, 1])).toBe(0);
+  });
+});
+
+describe("toVector", () => {
+  it("passes a number[] through unchanged", () => {
+    expect(toVector([0.1, 0.2, 0.3])).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("parses the pgvector text literal the raw-SQL paths return", () => {
+    // searchSemantic / getRelatedItems surface the column as this string form.
+    expect(toVector("[0.1,0.2,0.3]")).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("round-trips so cosineSim is identical for array and string forms", () => {
+    const arr = unitVector(7);
+    const literal = `[${arr.join(",")}]`;
+    const fromArray = toVector(arr)!;
+    const fromString = toVector(literal)!;
+    // The bug this guards: a string-form embedding must NOT collapse to 0.
+    expect(cosineSim(fromArray, fromString)).toBeCloseTo(1, 6);
+    expect(cosineSim(unitVector(7), fromString)).toBeCloseTo(1, 6);
+  });
+
+  it("returns null for null, empty, and unparseable values", () => {
+    expect(toVector(null)).toBeNull();
+    expect(toVector(undefined)).toBeNull();
+    expect(toVector([])).toBeNull();
+    expect(toVector("[]")).toBeNull();
+    expect(toVector("not-a-vector")).toBeNull();
+    expect(toVector([1, NaN, 3])).toBeNull();
   });
 });
 

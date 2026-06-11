@@ -55,6 +55,7 @@ export function FeedToolbar({
         {searchQuery && (
           <button
             onClick={() => setSearchQuery("")}
+            aria-label="Clear search"
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground"
           >
             <X size={12} />
@@ -74,6 +75,7 @@ export function FeedToolbar({
         )}
         <button
           onClick={() => setSortMode(sortMode === "time" ? "priority" : "time")}
+          aria-pressed={sortMode === "priority"}
           className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded border data-readout transition-colors ${
             sortMode === "priority"
               ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
@@ -151,6 +153,7 @@ export function MobileCategoryBar({
             <button
               key={cat.value}
               onClick={() => onSelectCategory(cat.value)}
+              aria-current={isActive ? "true" : undefined}
               className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] uppercase tracking-wider font-medium transition-all whitespace-nowrap ${
                 isActive
                   ? "bg-primary/15 text-primary border border-primary/25"

@@ -44,6 +44,7 @@ export function Sidebar({
             <button
               key={cat.value}
               onClick={() => onSelectCategory(cat.value)}
+              aria-current={isActive ? "true" : undefined}
               className={`w-full flex items-center gap-2 px-2 py-2 rounded text-xs transition-all ${
                 isActive
                   ? "bg-primary/10 text-primary border border-primary/20"
@@ -81,6 +82,7 @@ export function Sidebar({
               <button
                 key={source}
                 onClick={() => onSelectSource(source)}
+                aria-current={isActive ? "true" : undefined}
                 className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-[10px] transition-all ${
                   isActive
                     ? "bg-primary/10 border border-primary/20"
@@ -122,7 +124,8 @@ export function Sidebar({
               </button>
               <button
                 onClick={() => onDeleteWatchlist(wl.id)}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"
+                aria-label={`Delete watchlist ${wl.name}`}
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"
               >
                 <X size={10} />
               </button>

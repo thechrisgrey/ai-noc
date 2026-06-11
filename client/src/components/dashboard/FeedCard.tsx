@@ -68,7 +68,7 @@ export function FeedCard({
               </span>
             )}
             {pri > 0 && (
-              <span className="text-[8px] data-readout text-muted-foreground/30 px-1 py-px rounded bg-card/50">
+              <span className="text-[10px] data-readout text-muted-foreground/60 px-1 py-px rounded bg-card/50">
                 P{pri}
               </span>
             )}

@@ -26,6 +26,7 @@ export function FeedHealthBanner() {
     <div>
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="w-full flex items-center gap-2 text-[10px] uppercase tracking-wider data-readout"
       >
         <span

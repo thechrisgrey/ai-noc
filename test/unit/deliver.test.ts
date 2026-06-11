@@ -48,6 +48,18 @@ describe("deliverDigest — SES path", () => {
     expect(input.Content?.Simple?.Body?.Text?.Data).toBe("## SECTION\nA digest body.");
   });
 
+  it("strips CR/LF from the subject so it cannot inject an email header", async () => {
+    process.env.DIGEST_EMAIL_TO = "to@example.com";
+    sesMock.on(SendEmailCommand).resolves({ MessageId: "abc" });
+
+    await deliverDigest("body", "Headline\r\nBcc: victim@example.com");
+
+    const subject = sesMock.commandCalls(SendEmailCommand)[0].args[0].input.Content?.Simple?.Subject
+      ?.Data as string;
+    expect(subject).not.toMatch(/[\r\n]/);
+    expect(subject).toBe("Headline Bcc: victim@example.com");
+  });
+
   it("defaults the From address to DIGEST_EMAIL_TO", async () => {
     process.env.DIGEST_EMAIL_TO = "solo@example.com";
     sesMock.on(SendEmailCommand).resolves({ MessageId: "abc" });

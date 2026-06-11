@@ -49,19 +49,30 @@ function renderHtml(content: string): string {
       );
       continue;
     }
+    // Body paragraph. Escape first (titles are untrusted), then promote
+    // **bolded** spans — the per-item "Why it matters" implication — to
+    // <strong>. The captured span is already escaped, so this is XSS-safe.
+    const escaped = escapeHtml(line).replace(
+      /\*\*([^*]+)\*\*/g,
+      "<strong>$1</strong>",
+    );
     parts.push(
-      `<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;margin:8px 0;">${escapeHtml(line)}</p>`,
+      `<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;margin:8px 0;">${escaped}</p>`,
     );
   }
   return `<div style="max-width:640px;margin:0 auto;padding:16px;">${parts.join("")}</div>`;
 }
 
-/** Send the digest via SES. Returns false on any failure (never throws). */
-async function deliverViaSes(content: string): Promise<boolean> {
+/** Send the digest via SES. Returns false on any failure (never throws). An
+ * explicit subject (the brief's reviewed headline) overrides the dated default. */
+async function deliverViaSes(content: string, subject?: string): Promise<boolean> {
   const to = process.env.DIGEST_EMAIL_TO;
   if (!to) return false;
   const from = process.env.DIGEST_EMAIL_FROM || to;
   const date = new Date().toISOString().slice(0, 10);
+  // Collapse any CR/LF so a subject can never inject an extra email header.
+  const subjectLine =
+    (subject?.replace(/[\r\n]+/g, " ").trim() || `AI NOC Daily Digest — ${date}`).slice(0, 200);
   try {
     await ses.send(
       new SendEmailCommand({
@@ -69,7 +80,7 @@ async function deliverViaSes(content: string): Promise<boolean> {
         Destination: { ToAddresses: [to] },
         Content: {
           Simple: {
-            Subject: { Data: `AI NOC Daily Digest — ${date}` },
+            Subject: { Data: subjectLine },
             Body: {
               Text: { Data: content },
               Html: { Data: renderHtml(content) },
@@ -123,9 +134,9 @@ async function deliverViaWebhook(content: string): Promise<boolean> {
  * DIGEST_EMAIL_TO is set) and the optional webhook (secondary, when
  * DIGEST_WEBHOOK_URL is set). Returns true if at least one channel succeeded.
  */
-export async function deliverDigest(content: string): Promise<boolean> {
+export async function deliverDigest(content: string, subject?: string): Promise<boolean> {
   const [sesOk, webhookOk] = await Promise.all([
-    deliverViaSes(content),
+    deliverViaSes(content, subject),
     deliverViaWebhook(content),
   ]);
   return sesOk || webhookOk;

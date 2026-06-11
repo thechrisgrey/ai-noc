@@ -1,5 +1,5 @@
 import type { FeedItem, Watchlist } from "@shared/schema";
-import { cosineSim, embedText } from "./embeddings";
+import { cosineSim, embedText, toVector } from "./embeddings";
 
 // Cosine threshold above which a watchlist's semantic query is considered a hit
 // against an item embedding. Slightly stricter than the clustering threshold so
@@ -35,11 +35,14 @@ export function matchesWatchlist(
     const needle = wl.search.toLowerCase();
     const haystack = `${item.title} ${item.description ?? ""}`.toLowerCase();
     const lexicalHit = haystack.includes(needle);
-    const itemEmbedding = item.embedding as unknown as number[] | null;
+    // toVector handles both the array form (Drizzle query builder) and the
+    // pgvector text-literal form (raw-SQL paths) so a semantic hit can't be
+    // silently dropped just because of how the row was loaded.
+    const itemEmbedding = toVector(item.embedding);
     const semanticHit =
       !lexicalHit &&
       Array.isArray(wlEmbedding) &&
-      Array.isArray(itemEmbedding) &&
+      itemEmbedding !== null &&
       cosineSim(wlEmbedding, itemEmbedding) > WATCHLIST_SIM_THRESHOLD;
     if (!lexicalHit && !semanticHit) return false;
   }

@@ -4,6 +4,7 @@ export { FeedToolbar, MobileCategoryBar } from "./FeedToolbar";
 export { FeedStream } from "./FeedStream";
 export { IntelPanel } from "./IntelPanel";
 export { BriefingPanel } from "./BriefingPanel";
+export { BriefWorkshop } from "./BriefWorkshop";
 export { KpiCard } from "./KpiCard";
 
 export type { Category, FeedItemWithBookmark, Stats } from "./constants";

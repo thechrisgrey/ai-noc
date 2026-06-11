@@ -62,9 +62,22 @@ export const briefings = pgTable("briefings", {
   content: text("content").notNull(),
   itemCount: integer("item_count").notNull(),
   generatedAt: text("generated_at").notNull(),
-  // 'hourly' (the rolling executive briefing) or 'daily_digest' (the once-a-day
-  // SES-delivered roundup). The archive UI filters on this.
+  // 'hourly' (legacy executive briefing), 'daily_digest' (legacy roundup), or
+  // the two-tier brief kinds 'daily_skim' / 'weekly_heavy'. The archive UI
+  // filters on this.
   kind: text("kind").notNull().default("hourly"),
+  // Approval lifecycle for the two-tier brief: 'draft' (generated, awaiting the
+  // owner's review) -> 'approved' -> 'sent'. Legacy/auto briefings default to
+  // 'sent' so they never surface as a pending draft.
+  status: text("status").notNull().default("sent"),
+  // Email subject / headline derived from the lede; editable in the workshop
+  // before send. NULL for legacy briefings (sender falls back to a default).
+  subject: text("subject"),
+  // Canonical UTC ISO stamp set when the approved brief is delivered.
+  sentAt: text("sent_at"),
+  // JSON array of cluster ids surfaced in this brief (CORE + periphery), used to
+  // dedupe the periphery valve against recent briefs. NULL for legacy rows.
+  surfacedClusterIds: text("surfaced_cluster_ids"),
 });
 
 // RSS/Atom feed sources. slug doubles as feed_items.source; deleting a source

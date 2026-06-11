@@ -88,3 +88,26 @@ export function cosineSim(a: number[], b: number[]): number {
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
+
+/**
+ * Normalize a stored embedding to number[] | null. The Drizzle query builder
+ * deserializes the pgvector column to a number[], but the raw-SQL paths
+ * (searchSemantic, getRelatedItems → mapVectorRows) surface it as the pgvector
+ * text literal "[0.1,0.2,...]". Every cosineSim caller MUST route the stored
+ * value through this so semantic matching can't silently no-op depending on
+ * which query path loaded the row.
+ */
+export function toVector(embedding: unknown): number[] | null {
+  if (Array.isArray(embedding)) {
+    return embedding.length > 0 && embedding.every((n) => Number.isFinite(n))
+      ? (embedding as number[])
+      : null;
+  }
+  if (typeof embedding === "string" && embedding.length > 2) {
+    const parsed = embedding.slice(1, -1).split(",").map(Number);
+    return parsed.length > 0 && parsed.every((n) => Number.isFinite(n))
+      ? parsed
+      : null;
+  }
+  return null;
+}

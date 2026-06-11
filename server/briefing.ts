@@ -68,11 +68,13 @@ export async function generateBriefing(store: IStorage = storage): Promise<strin
       return null;
     }
 
-    // Cache in database
+    // Cache in database. The legacy hourly pulse is not part of the approval
+    // flow, so it is born 'sent' (explicit, not relying on the column default).
     const briefing = await store.createBriefing({
       content: briefingText,
       itemCount: items.length,
       generatedAt: new Date().toISOString(),
+      status: "sent",
     });
 
     console.log(

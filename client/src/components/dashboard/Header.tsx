@@ -2,6 +2,7 @@ import { RefreshCw, Bookmark, Bell, BellOff } from "lucide-react";
 import type { UseMutationResult } from "@tanstack/react-query";
 import { type Stats } from "./constants";
 import { StatusBar } from "./StatusBar";
+import { BriefWorkshop } from "./BriefWorkshop";
 import * as notifications from "@/lib/notifications";
 
 interface HeaderProps {
@@ -56,6 +57,7 @@ export function Header({
         <StatusBar lastSynced={stats?.lastRefreshed} />
 
         <div className="flex items-center gap-2">
+          <BriefWorkshop />
           <button
             onClick={() => setShowBookmarks(!showBookmarks)}
             aria-pressed={showBookmarks}

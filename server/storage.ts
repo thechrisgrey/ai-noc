@@ -179,6 +179,13 @@ export interface IStorage {
   getLatestBriefing(kind?: string): Promise<Briefing | undefined>;
   getBriefings(opts: { kind?: string; limit?: number }): Promise<Briefing[]>;
   createBriefing(b: InsertBriefing): Promise<Briefing>;
+  getBriefingById(id: number): Promise<Briefing | undefined>;
+  getLatestDraft(): Promise<Briefing | undefined>;
+  claimDraftForSend(id: number): Promise<Briefing | undefined>;
+  updateBriefing(
+    id: number,
+    patch: { content?: string; subject?: string | null; status?: string; sentAt?: string | null },
+  ): Promise<Briefing | undefined>;
   getSources(enabledOnly?: boolean): Promise<Source[]>;
   createSource(s: InsertSource): Promise<Source>;
   updateSource(
@@ -717,6 +724,59 @@ export class DatabaseStorage implements IStorage {
 
   async createBriefing(b: InsertBriefing): Promise<Briefing> {
     const rows = await this.db.insert(briefings).values(b).returning();
+    return rows[0];
+  }
+
+  async getBriefingById(id: number): Promise<Briefing | undefined> {
+    const rows = await this.db.select().from(briefings).where(eq(briefings.id, id)).limit(1);
+    return rows[0];
+  }
+
+  /** Latest two-tier brief awaiting the owner's review (the approval queue). */
+  async getLatestDraft(): Promise<Briefing | undefined> {
+    const rows = await this.db
+      .select()
+      .from(briefings)
+      .where(
+        and(
+          eq(briefings.status, "draft"),
+          inArray(briefings.kind, ["daily_skim", "weekly_heavy"]),
+        ),
+      )
+      .orderBy(desc(briefings.generatedAt))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Atomically claim a draft for sending: transition draft → 'sending' only if
+   * it is still a draft, returning the fresh row. A concurrent claim or an
+   * already-sent brief returns undefined. This single compare-and-swap closes
+   * both the double-send race and the edit-after-approval race (the edit guard
+   * rejects any non-'draft' status, so a claimed brief can no longer be edited).
+   */
+  async claimDraftForSend(id: number): Promise<Briefing | undefined> {
+    const rows = await this.db
+      .update(briefings)
+      .set({ status: "sending" })
+      .where(and(eq(briefings.id, id), eq(briefings.status, "draft")))
+      .returning();
+    return rows[0];
+  }
+
+  async updateBriefing(
+    id: number,
+    patch: { content?: string; subject?: string | null; status?: string; sentAt?: string | null },
+  ): Promise<Briefing | undefined> {
+    const set: Partial<InsertBriefing> = {};
+    if (patch.content !== undefined) set.content = patch.content;
+    if (patch.subject !== undefined) set.subject = patch.subject;
+    if (patch.status !== undefined) set.status = patch.status;
+    if (patch.sentAt !== undefined) set.sentAt = patch.sentAt;
+    if (Object.keys(set).length === 0) {
+      return this.getBriefingById(id);
+    }
+    const rows = await this.db.update(briefings).set(set).where(eq(briefings.id, id)).returning();
     return rows[0];
   }
 

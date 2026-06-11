@@ -1,13 +1,20 @@
-import { Bookmark, BookmarkCheck, ExternalLink, AlertTriangle, Clock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Bookmark, BookmarkCheck, ExternalLink, AlertTriangle, Clock, ChevronDown, Sparkles } from "lucide-react";
+import type { FeedItem } from "@shared/schema";
 import { CATEGORY_COLORS, type FeedItemWithBookmark } from "./constants";
 import { getSourceMeta, timeAgo } from "./utils";
 
 export function FeedCard({
   item,
   onToggleBookmark,
+  onMarkRead,
+  isSelected = false,
 }: {
   item: FeedItemWithBookmark;
   onToggleBookmark: (id: number, isBookmarked: boolean) => void;
+  onMarkRead?: (id: number) => void;
+  isSelected?: boolean;
 }) {
   const sourceInfo = getSourceMeta(item.source);
   const SourceIcon = sourceInfo.icon;
@@ -15,10 +22,34 @@ export function FeedCard({
   const pri = (item as any).priority as number || 0;
   const isHigh = pri >= 80;
   const isMedium = pri >= 60 && pri < 80;
+  const isUnread = !item.readAt;
+  const coverageCount = item.coverageCount ?? 1;
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
+
+  useEffect(() => {
+    if (isSelected) cardRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [isSelected]);
+
+  const { data: siblings = [], isLoading: siblingsLoading } = useQuery<FeedItem[]>({
+    queryKey: ["/api/items", item.id, "cluster"],
+    enabled: expanded,
+  });
+
+  const { data: related = [], isLoading: relatedLoading } = useQuery<FeedItem[]>({
+    queryKey: ["/api/items", item.id, "related"],
+    enabled: relatedOpen,
+  });
 
   return (
     <div
-      className={`group relative rounded-xl border bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_2px_10px_rgba(0,0,0,0.35)] transition-colors duration-200 ${
+      ref={cardRef}
+      onClick={() => isUnread && onMarkRead?.(item.id)}
+      className={`group relative rounded-xl border border-l-2 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_2px_10px_rgba(0,0,0,0.35)] transition-colors duration-200 ${
+        isUnread ? "border-l-primary/60" : "border-l-transparent"
+      } ${isSelected ? "ring-1 ring-primary/50 " : ""}${
         isHigh
           ? "border-red-500/25 hover:border-red-500/40"
           : isMedium
@@ -55,6 +86,38 @@ export function FeedCard({
             >
               {item.category.replace("_", " ")}
             </span>
+            {coverageCount > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded((v) => !v);
+                }}
+                aria-expanded={expanded}
+                className="flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] font-medium px-2 py-px rounded-full bg-white/[0.06] text-muted-foreground hover:text-foreground data-readout transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                +{coverageCount - 1} SOURCES
+                <ChevronDown
+                  size={9}
+                  className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+                />
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setRelatedOpen((v) => !v);
+              }}
+              aria-expanded={relatedOpen}
+              aria-label="Related signals"
+              className="flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] font-medium px-2 py-px rounded-full bg-white/[0.06] text-muted-foreground hover:text-primary data-readout transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Sparkles size={9} />
+              RELATED
+              <ChevronDown
+                size={9}
+                className={`transition-transform ${relatedOpen ? "rotate-180" : ""}`}
+              />
+            </button>
             {isHigh && (
               <span className="pulse-breaking flex items-center gap-1 text-[9px] uppercase tracking-[0.14em] font-semibold text-red-400 bg-red-500/[0.12] px-2 py-px rounded-full">
                 <AlertTriangle size={9} />
@@ -83,6 +146,13 @@ export function FeedCard({
               </span>
             )}
             <span className="ml-auto text-[10px] text-muted-foreground/60 data-readout flex items-center gap-1 flex-shrink-0">
+              {isUnread && (
+                <span
+                  aria-hidden="true"
+                  data-unread-indicator
+                  className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"
+                />
+              )}
               <Clock size={9} />
               {timeAgo(item.publishedAt)}
             </span>
@@ -98,6 +168,97 @@ export function FeedCard({
             <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
               {item.description}
             </p>
+          )}
+
+          {/* Cluster siblings (other sources covering this story) */}
+          {expanded && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
+              {siblingsLoading ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  Loading coverage...
+                </div>
+              ) : siblings.length === 0 ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  No other coverage found
+                </div>
+              ) : (
+                siblings.map((sib, i) => (
+                  <div key={sib.id} className="flex items-center gap-2 min-w-0">
+                    {i === 0 && (
+                      <span className="flex-shrink-0 text-[8px] uppercase tracking-[0.14em] font-semibold text-primary bg-primary/10 px-1.5 py-px rounded-full">
+                        FIRST
+                      </span>
+                    )}
+                    <span
+                      className="flex-shrink-0 text-[10px] font-medium"
+                      style={{ color: getSourceMeta(sib.source).color }}
+                    >
+                      {sib.sourceLabel}
+                    </span>
+                    {sib.url ? (
+                      <a
+                        href={sib.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="truncate text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {sib.title}
+                      </a>
+                    ) : (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {sib.title}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Related signals (semantically nearest items) */}
+          {relatedOpen && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
+              <div className="flex items-center gap-1 text-[8px] uppercase tracking-[0.14em] font-semibold text-primary/80 data-readout mb-1">
+                <Sparkles size={8} />
+                RELATED SIGNALS
+              </div>
+              {relatedLoading ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  Loading related...
+                </div>
+              ) : related.length === 0 ? (
+                <div className="text-[10px] text-muted-foreground/60 data-readout">
+                  No related signals found
+                </div>
+              ) : (
+                related.map((rel) => (
+                  <div key={rel.id} className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="flex-shrink-0 text-[10px] font-medium"
+                      style={{ color: getSourceMeta(rel.source).color }}
+                    >
+                      {rel.sourceLabel}
+                    </span>
+                    {rel.url ? (
+                      <a
+                        href={rel.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="truncate text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {rel.title}
+                      </a>
+                    ) : (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {rel.title}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
 
@@ -129,6 +290,7 @@ export function FeedCard({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => isUnread && onMarkRead?.(item.id)}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-white/[0.05] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               aria-label="Open article"
             >

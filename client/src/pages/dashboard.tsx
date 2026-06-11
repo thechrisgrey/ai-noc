@@ -3,6 +3,7 @@ import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tan
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFeedWebSocket } from "@/hooks/use-feed-websocket";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { Radio, Activity, AlertTriangle, Brain } from "lucide-react";
 import * as notifications from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +39,9 @@ export default function Dashboard() {
     initParams.get("source") || "all",
   );
   const [searchQuery, setSearchQuery] = useState(initParams.get("search") || "");
+  const [searchMode, setSearchMode] = useState<"lexical" | "semantic">(
+    initParams.get("mode") === "semantic" ? "semantic" : "lexical",
+  );
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [newSignals, setNewSignals] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -50,10 +54,14 @@ export default function Dashboard() {
   );
   const [savingWatchlist, setSavingWatchlist] = useState(false);
   const [watchlistName, setWatchlistName] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
   const { toast } = useToast();
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Semantic search is only meaningful with a non-empty query.
+  const isSemantic = searchMode === "semantic" && debouncedSearch !== "";
 
   // ── URL sync ──
   useEffect(() => {
@@ -62,9 +70,10 @@ export default function Dashboard() {
     if (selectedSource !== "all") params.set("source", selectedSource);
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (sortMode !== "time") params.set("sort", sortMode);
+    if (isSemantic) params.set("mode", "semantic");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [selectedCategory, selectedSource, debouncedSearch, sortMode]);
+  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic]);
 
   useEffect(() => {
     localStorage.setItem("ai-noc-sort", sortMode);
@@ -88,7 +97,23 @@ export default function Dashboard() {
         }
       }
     },
-  }), []);
+    onWatchlistHit: (hit: { watchlistId: number; name: string; items: { id: number; title: string; sourceLabel: string }[] }) => {
+      const first = hit.items[0];
+      const description = first?.title ?? `${hit.items.length} new signals`;
+      toast({ title: `WATCHLIST: ${hit.name}`, description });
+      if (notifications.isEnabled() && document.hidden && first) {
+        notifications.sendNotification(
+          `WATCHLIST: ${hit.name}`,
+          first.title,
+          () => {
+            window.focus();
+            queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+          },
+        );
+      }
+    },
+  }), [toast]);
   useFeedWebSocket(wsCallbacks);
 
   // ── Queries ──
@@ -101,14 +126,16 @@ export default function Dashboard() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<FeedPage>({
-    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode],
+    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (selectedCategory !== "all") params.set("category", selectedCategory);
       if (selectedSource !== "all") params.set("source", selectedSource);
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (sortMode !== "time") params.set("sort", sortMode);
-      if (pageParam) params.set("cursor", pageParam as string);
+      if (isSemantic) params.set("mode", "semantic");
+      // Semantic results come as a single distance-ranked page (nextCursor null).
+      if (pageParam && !isSemantic) params.set("cursor", pageParam as string);
       params.set("limit", "30");
       const res = await apiRequest("GET", `/api/feed?${params.toString()}`);
       return res.json();
@@ -221,6 +248,49 @@ export default function Dashboard() {
     },
   });
 
+  const markReadMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await apiRequest("POST", "/api/items/read", { ids });
+    },
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/feed"] });
+      const snapshots = queryClient.getQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] });
+      const readAt = new Date().toISOString();
+      const idSet = new Set(ids);
+      queryClient.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] }, (data) => {
+        if (!data) return data;
+        return {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              idSet.has(item.id) && !item.readAt ? { ...item, readAt } : item,
+            ),
+          })),
+        };
+      });
+      return { snapshots };
+    },
+    onError: (_err, _vars, context) => {
+      for (const [queryKey, data] of context?.snapshots ?? []) {
+        queryClient.setQueryData(queryKey, data);
+      }
+    },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async (before: string) => {
+      await apiRequest("POST", "/api/feed/read-all", { before });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: () => {
+      toast({ title: "MARK READ FAILED", description: "Could not mark signals read. Try again.", variant: "destructive" });
+    },
+  });
+
   const createWatchlistMutation = useMutation({
     mutationFn: async (body: { name: string; category?: string; source?: string; search?: string; sort?: string }) => {
       const res = await apiRequest("POST", "/api/watchlists", body);
@@ -243,6 +313,18 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+    },
+  });
+
+  const toggleWatchlistAlertMutation = useMutation({
+    mutationFn: async ({ id, alert }: { id: number; alert: boolean }) => {
+      await apiRequest("PATCH", `/api/watchlists/${id}`, { alert });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+    },
+    onError: () => {
+      toast({ title: "ALERT TOGGLE FAILED", description: "Could not update watchlist alerts.", variant: "destructive" });
     },
   });
 
@@ -274,6 +356,19 @@ export default function Dashboard() {
   const handleToggleBookmark = useCallback((id: number, isBookmarked: boolean) => {
     bookmarkMutation.mutate({ feedItemId: id, isBookmarked });
   }, [bookmarkMutation]);
+
+  const handleMarkRead = useCallback((id: number) => {
+    markReadMutation.mutate([id]);
+  }, [markReadMutation]);
+
+  const handleMarkAllRead = useCallback(() => {
+    if (feedItems.length === 0) return;
+    const newest = feedItems.reduce(
+      (max, item) => (item.publishedAt > max ? item.publishedAt : max),
+      feedItems[0].publishedAt,
+    );
+    markAllReadMutation.mutate(newest);
+  }, [feedItems, markAllReadMutation]);
 
   const handleSelectCategory = useCallback((cat: Category) => {
     setSelectedCategory(cat);
@@ -309,6 +404,34 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
     setNewSignals(0);
   }, []);
+
+  // ── Keyboard navigation ──
+  const handleNavSelect = useCallback((item: FeedItemWithBookmark) => {
+    setSelectedItemId(item.id);
+    if (!item.readAt) markReadMutation.mutate([item.id]);
+  }, [markReadMutation]);
+
+  const handleNavOpen = useCallback((item: FeedItemWithBookmark) => {
+    if (item.url) window.open(item.url, "_blank", "noopener");
+  }, []);
+
+  const handleNavBookmark = useCallback((item: FeedItemWithBookmark) => {
+    bookmarkMutation.mutate({ feedItemId: item.id, isBookmarked: item.isBookmarked });
+  }, [bookmarkMutation]);
+
+  const handleNavClear = useCallback(() => {
+    setSelectedItemId(null);
+  }, []);
+
+  useKeyboardNav({
+    items: feedItems,
+    selectedId: selectedItemId,
+    onSelect: handleNavSelect,
+    onOpen: handleNavOpen,
+    onBookmark: handleNavBookmark,
+    onClear: handleNavClear,
+    enabled: !showBookmarks,
+  });
 
   // ── Render ──
   return (
@@ -347,6 +470,7 @@ export default function Dashboard() {
             onSelectCategory={handleSelectCategory}
             onSelectSource={handleSelectSource}
             onApplyWatchlist={handleApplyWatchlist}
+            onToggleWatchlistAlert={(id, alert) => toggleWatchlistAlertMutation.mutate({ id, alert })}
             onDeleteWatchlist={(id) => deleteWatchlistMutation.mutate(id)}
           />
 
@@ -356,7 +480,13 @@ export default function Dashboard() {
             {/* KPI Row */}
             <div className="flex-shrink-0 px-5 py-4 border-b border-white/[0.04]">
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <KpiCard label="TOTAL SIGNALS" value={statsError ? "--" : stats?.total || 0} icon={Radio} color="hsl(68,96%,58%)" />
+                <KpiCard
+                  label="TOTAL SIGNALS"
+                  value={statsError ? "--" : stats?.total || 0}
+                  icon={Radio}
+                  color="hsl(68,96%,58%)"
+                  sub={!statsError && (stats?.unreadCount ?? 0) > 0 ? `${stats!.unreadCount} UNREAD` : undefined}
+                />
                 <KpiCard label="HIGH PRIORITY" value={statsError ? "--" : stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(5,80%,62%)" />
                 <KpiCard label="MODEL RELEASES" value={statsError ? "--" : stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(68,95%,60%)" />
                 <KpiCard label="SOURCES ACTIVE" value={statsError ? "--" : sourceCount} icon={Activity} color="hsl(150,60%,55%)" />
@@ -366,6 +496,8 @@ export default function Dashboard() {
             <FeedToolbar
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
+              searchMode={searchMode}
+              setSearchMode={setSearchMode}
               sortMode={sortMode}
               setSortMode={setSortMode}
               selectedCategory={selectedCategory}
@@ -378,6 +510,7 @@ export default function Dashboard() {
               watchlistName={watchlistName}
               setWatchlistName={setWatchlistName}
               onSaveWatchlist={handleSaveWatchlist}
+              onMarkAllRead={handleMarkAllRead}
               feedItemCount={feedItems.length}
               stats={stats}
               onSelectCategory={handleSelectCategory}
@@ -398,6 +531,8 @@ export default function Dashboard() {
               newSignals={newSignals}
               onDismissNewSignals={handleDismissNewSignals}
               onToggleBookmark={handleToggleBookmark}
+              onMarkRead={handleMarkRead}
+              selectedItemId={selectedItemId}
             />
           </div>
 

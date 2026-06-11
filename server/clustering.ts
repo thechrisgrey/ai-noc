@@ -1,7 +1,15 @@
 import type { FeedItem } from "@shared/schema";
 import { storage } from "./storage";
+import { cosineSim } from "./embeddings";
 
 const SIMILARITY_THRESHOLD = 0.35;
+// Cosine threshold for embedding-based clustering; same-source pairs need a
+// much higher bar (0.92) since at that point a match is a dedup signal rather
+// than independent coverage of the same story.
+const CLUSTER_SIM_THRESHOLD = parseFloat(
+  process.env.CLUSTER_SIM_THRESHOLD || "0.80",
+);
+const SAME_SOURCE_DEDUP_THRESHOLD = 0.92;
 
 function trigrams(str: string): Set<string> {
   const s = str.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
@@ -26,6 +34,20 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 /** Jaccard similarity between two strings based on trigrams */
 export function similarity(a: string, b: string): number {
   return jaccard(trigrams(a), trigrams(b));
+}
+
+/**
+ * Normalize an item's embedding to number[] | null. Drizzle's vector type
+ * returns an array; some drivers may surface the pgvector text literal.
+ */
+function embeddingOf(item: FeedItem): number[] | null {
+  const e = item.embedding as unknown;
+  if (Array.isArray(e) && e.length > 0) return e as number[];
+  if (typeof e === "string" && e.length > 2) {
+    const parsed = e.slice(1, -1).split(",").map(Number);
+    return parsed.every((n) => Number.isFinite(n)) ? parsed : null;
+  }
+  return null;
 }
 
 let isClustering = false;
@@ -72,13 +94,29 @@ export async function clusterRecentItems(): Promise<void> {
       }
 
       const itemTri = trigramCache.get(item.id)!;
+      const itemVec = embeddingOf(item);
 
       for (const other of sorted) {
         if (assigned.has(other.id)) continue;
-        if (item.source === other.source) continue;
 
-        const sim = jaccard(itemTri, trigramCache.get(other.id)!);
-        if (sim > SIMILARITY_THRESHOLD) {
+        const otherVec = embeddingOf(other);
+        let matched = false;
+        if (itemVec && otherVec) {
+          // Both embedded: cosine drives clustering across all sources; a
+          // same-source pair must clear the stricter dedup bar to merge.
+          const sim = cosineSim(itemVec, otherVec);
+          const threshold =
+            item.source === other.source
+              ? SAME_SOURCE_DEDUP_THRESHOLD
+              : CLUSTER_SIM_THRESHOLD;
+          matched = sim > threshold;
+        } else {
+          // Fallback to trigram title similarity across distinct sources only.
+          if (item.source === other.source) continue;
+          matched = jaccard(itemTri, trigramCache.get(other.id)!) > SIMILARITY_THRESHOLD;
+        }
+
+        if (matched) {
           assigned.add(other.id);
           if (clusterId !== other.clusterId) {
             updates.push({ id: other.id, clusterId });

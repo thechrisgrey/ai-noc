@@ -10,20 +10,26 @@ const stats: Stats = {
   byCategory: { model_release: 4 },
   bySource: { openai: 6, anthropic: 4 },
   breakingCount: 1,
+  unreadCount: 3,
 };
 
-function renderSidebar(onDeleteWatchlist: (id: number) => void = () => {}) {
+function renderSidebar(overrides: {
+  onDeleteWatchlist?: (id: number) => void;
+  onToggleWatchlistAlert?: (id: number, alert: boolean) => void;
+  watchlistsData?: any[];
+} = {}) {
   return render(
     <Sidebar
       stats={stats}
       selectedCategory="all"
       selectedSource="all"
       showBookmarks={false}
-      watchlistsData={[{ id: 1, name: "GPU launches" }]}
+      watchlistsData={overrides.watchlistsData ?? [{ id: 1, name: "GPU launches" }]}
       onSelectCategory={() => {}}
       onSelectSource={() => {}}
       onApplyWatchlist={() => {}}
-      onDeleteWatchlist={onDeleteWatchlist}
+      onToggleWatchlistAlert={overrides.onToggleWatchlistAlert ?? (() => {})}
+      onDeleteWatchlist={overrides.onDeleteWatchlist ?? (() => {})}
     />,
   );
 }
@@ -39,8 +45,25 @@ describe("<Sidebar />", () => {
   it("fires onDeleteWatchlist with the watchlist id", async () => {
     const spy = vi.fn();
     const user = userEvent.setup();
-    renderSidebar(spy);
+    renderSidebar({ onDeleteWatchlist: spy });
     await user.click(screen.getByRole("button", { name: "Delete watchlist GPU launches" }));
     expect(spy).toHaveBeenCalledWith(1);
+  });
+
+  it("exposes the alert toggle with aria-pressed reflecting alert state", () => {
+    renderSidebar({ watchlistsData: [{ id: 1, name: "GPU launches", alert: true }] });
+    const toggle = screen.getByRole("button", { name: "Toggle alerts for GPU launches" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("fires onToggleWatchlistAlert flipping the current alert state", async () => {
+    const spy = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({
+      onToggleWatchlistAlert: spy,
+      watchlistsData: [{ id: 7, name: "GPU launches", alert: false }],
+    });
+    await user.click(screen.getByRole("button", { name: "Toggle alerts for GPU launches" }));
+    expect(spy).toHaveBeenCalledWith(7, true);
   });
 });

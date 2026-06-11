@@ -1,7 +1,17 @@
 import { SOURCE_META, type FeedItemWithBookmark } from "./constants";
 
 export function getSourceMeta(source: string) {
-  return SOURCE_META[source] || { icon: SOURCE_META.community.icon, color: "hsl(68, 95%, 60%)", label: source };
+  // Slugs deduped with a numeric suffix (e.g. anthropic_gh_2) share the base
+  // source's icon/label — fall back to the base before the generic default.
+  const base = source.replace(/_\d+$/, "");
+  return (
+    SOURCE_META[source] ||
+    SOURCE_META[base] || {
+      icon: SOURCE_META.community.icon,
+      color: "hsl(68, 95%, 60%)",
+      label: source,
+    }
+  );
 }
 
 export function timeAgo(dateStr: string): string {

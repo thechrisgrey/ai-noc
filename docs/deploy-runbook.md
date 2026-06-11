@@ -162,3 +162,39 @@ Notes:
   that Amplify env var pointed at `https://d289ng5gobnp4e.cloudfront.net`.
 - Server-side CORS already includes `https://noc.altivum.ai`, so the SPA on the
   custom domain can call the API either via the rewrite or directly.
+
+## Phase 6 — Daily digest email (SES)
+
+The task runs a self-scheduling timer that, at `DIGEST_HOUR_UTC` (default `12`,
+UTC), generates the daily digest and delivers it. Delivery is via Amazon SES to
+`DIGEST_EMAIL_TO` (`christian.perez@altivum.io`), with an optional secondary
+webhook (`DIGEST_WEBHOOK_URL`). The task role grants `ses:SendEmail` scoped to
+`arn:aws:ses:us-east-1:<account>:identity/*`.
+
+> **WARNING:** Verify the SES identity **before** the first digest fires.
+> Unverified senders fail every send. SES authorizes on the verified From
+> identity, so the `From` address (defaults to `DIGEST_EMAIL_TO`) must be
+> verified.
+
+1. Create and verify the sender identity (run in the SES region, `us-east-1`):
+
+   ```sh
+   aws sesv2 create-email-identity --email-identity christian.perez@altivum.io --region us-east-1
+   ```
+
+   Then open the verification email AWS sends to that address and click the
+   verification link. Confirm:
+
+   ```sh
+   aws sesv2 get-email-identity --email-identity christian.perez@altivum.io --region us-east-1 \
+     --query 'VerifiedForSendingStatus'   # expect true
+   ```
+
+2. **SES sandbox limitation:** a brand-new SES account is in the sandbox, which
+   only allows sending **to** verified identities. Because the digest sends to
+   the same verified address it sends from, sending to self works in the sandbox
+   without a production-access request. To deliver to other recipients later,
+   request production access in the SES console.
+
+3. The digest is delivered automatically on schedule. To disable it, set the
+   `DIGEST_HOUR_UTC` container env var to an empty string and redeploy.

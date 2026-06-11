@@ -19,6 +19,8 @@ interface FeedStreamProps {
   newSignals: number;
   onDismissNewSignals: () => void;
   onToggleBookmark: (id: number, isBookmarked: boolean) => void;
+  onMarkRead: (id: number) => void;
+  selectedItemId: number | null;
 }
 
 export function FeedStream({
@@ -36,6 +38,8 @@ export function FeedStream({
   newSignals,
   onDismissNewSignals,
   onToggleBookmark,
+  onMarkRead,
+  selectedItemId,
 }: FeedStreamProps) {
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
@@ -105,6 +109,7 @@ export function FeedStream({
           <BookmarksView
             bookmarksList={bookmarksList}
             onToggleBookmark={onToggleBookmark}
+            onMarkRead={onMarkRead}
           />
         ) : isError ? (
           <ErrorState onRetry={onRetry} />
@@ -114,6 +119,8 @@ export function FeedStream({
             loadMoreRef={loadMoreRef}
             isFetchingNextPage={isFetchingNextPage}
             onToggleBookmark={onToggleBookmark}
+            onMarkRead={onMarkRead}
+            selectedItemId={selectedItemId}
           />
         ) : (
           <GroupedList
@@ -122,6 +129,8 @@ export function FeedStream({
             loadMoreRef={loadMoreRef}
             isFetchingNextPage={isFetchingNextPage}
             onToggleBookmark={onToggleBookmark}
+            onMarkRead={onMarkRead}
+            selectedItemId={selectedItemId}
           />
         )}
       </div>
@@ -157,9 +166,11 @@ function LoadingSkeleton() {
 function BookmarksView({
   bookmarksList,
   onToggleBookmark,
+  onMarkRead,
 }: {
   bookmarksList: any[];
   onToggleBookmark: (id: number, isBookmarked: boolean) => void;
+  onMarkRead: (id: number) => void;
 }) {
   return (
     <div>
@@ -186,6 +197,7 @@ function BookmarksView({
                   key={bm.id}
                   item={{ ...bm.feedItem, isBookmarked: true }}
                   onToggleBookmark={onToggleBookmark}
+                  onMarkRead={onMarkRead}
                 />
               ),
           )}
@@ -259,11 +271,15 @@ function PriorityList({
   loadMoreRef,
   isFetchingNextPage,
   onToggleBookmark,
+  onMarkRead,
+  selectedItemId,
 }: {
   feedItems: FeedItemWithBookmark[];
   loadMoreRef: RefObject<HTMLDivElement | null>;
   isFetchingNextPage: boolean;
   onToggleBookmark: (id: number, isBookmarked: boolean) => void;
+  onMarkRead: (id: number) => void;
+  selectedItemId: number | null;
 }) {
   return (
     <div className="space-y-1.5">
@@ -273,7 +289,12 @@ function PriorityList({
           className="feed-enter"
           style={{ animationDelay: `${Math.min(i * 25, 200)}ms` }}
         >
-          <FeedCard item={item} onToggleBookmark={onToggleBookmark} />
+          <FeedCard
+            item={item}
+            onToggleBookmark={onToggleBookmark}
+            onMarkRead={onMarkRead}
+            isSelected={item.id === selectedItemId}
+          />
         </div>
       ))}
       {feedItems.length === 0 && <EmptyState />}
@@ -291,12 +312,16 @@ function GroupedList({
   loadMoreRef,
   isFetchingNextPage,
   onToggleBookmark,
+  onMarkRead,
+  selectedItemId,
 }: {
   groupedItems: { label: string; items: FeedItemWithBookmark[] }[];
   feedItems: FeedItemWithBookmark[];
   loadMoreRef: RefObject<HTMLDivElement | null>;
   isFetchingNextPage: boolean;
   onToggleBookmark: (id: number, isBookmarked: boolean) => void;
+  onMarkRead: (id: number) => void;
+  selectedItemId: number | null;
 }) {
   return (
     <div className="space-y-4">
@@ -320,7 +345,12 @@ function GroupedList({
                   animationDelay: `${Math.min(i * 25, 200)}ms`,
                 }}
               >
-                <FeedCard item={item} onToggleBookmark={onToggleBookmark} />
+                <FeedCard
+                  item={item}
+                  onToggleBookmark={onToggleBookmark}
+                  onMarkRead={onMarkRead}
+                  isSelected={item.id === selectedItemId}
+                />
               </div>
             ))}
           </div>

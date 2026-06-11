@@ -6,6 +6,7 @@ import { TrendingPanel } from "./TrendingPanel";
 import { BreakingAlerts } from "./BreakingAlerts";
 import { FeedHealthBanner } from "./FeedHealthBanner";
 import { SourceActivityPanel } from "./SourceActivityPanel";
+import { SourceIntelPanel } from "./SourceIntelPanel";
 
 const SignalGlobe = lazy(() => import("@/components/three/SignalGlobe"));
 
@@ -59,6 +60,10 @@ export function IntelPanel({ stats, feedItems }: IntelPanelProps) {
 
         <section className={SECTION_CARD}>
           <FeedHealthBanner />
+        </section>
+
+        <section className={SECTION_CARD}>
+          <SourceIntelPanel />
         </section>
 
         <section className={SECTION_CARD}>

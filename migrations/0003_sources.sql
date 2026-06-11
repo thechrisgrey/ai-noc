@@ -1,0 +1,35 @@
+CREATE TABLE "sources" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"slug" text NOT NULL,
+	"label" text NOT NULL,
+	"url" text NOT NULL,
+	"default_category" text NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"created_at" text NOT NULL,
+	CONSTRAINT "sources_slug_unique" UNIQUE("slug"),
+	CONSTRAINT "sources_url_unique" UNIQUE("url")
+);
+--> statement-breakpoint
+INSERT INTO "sources" ("slug", "label", "url", "default_category", "enabled", "created_at") VALUES
+	('openai', 'OpenAI', 'https://openai.com/news/rss.xml', 'model_release', true, '2026-06-10T00:00:00.000Z'),
+	('google_ai', 'Google AI', 'https://blog.google/technology/ai/rss/', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('meta_ai', 'Meta AI', 'https://about.fb.com/news/tag/ai/feed/', 'research', true, '2026-06-10T00:00:00.000Z'),
+	('mistral', 'Mistral AI', 'https://mistral.ai/rss.xml', 'model_release', true, '2026-06-10T00:00:00.000Z'),
+	('arxiv_ai', 'arXiv AI', 'https://arxiv.org/rss/cs.AI', 'research', true, '2026-06-10T00:00:00.000Z'),
+	('arxiv_nlp', 'arXiv NLP', 'https://arxiv.org/rss/cs.CL', 'research', true, '2026-06-10T00:00:00.000Z'),
+	('arxiv_ml', 'arXiv ML', 'https://arxiv.org/rss/cs.LG', 'research', true, '2026-06-10T00:00:00.000Z'),
+	('techcrunch', 'TechCrunch AI', 'https://techcrunch.com/category/artificial-intelligence/feed/', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('theverge', 'The Verge AI', 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('venturebeat', 'VentureBeat AI', 'https://venturebeat.com/category/ai/feed/', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('the_decoder', 'The Decoder', 'https://the-decoder.com/feed/', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('marktechpost', 'MarkTechPost', 'https://www.marktechpost.com/feed/', 'research', true, '2026-06-10T00:00:00.000Z'),
+	('huggingface', 'Hugging Face', 'https://huggingface.co/blog/feed.xml', 'model_release', true, '2026-06-10T00:00:00.000Z'),
+	('anthropic_gh', 'Anthropic SDK', 'https://github.com/anthropics/anthropic-sdk-python/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('anthropic_gh_2', 'Claude Code', 'https://github.com/anthropics/claude-code/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('anthropic_gh_3', 'Anthropic TS SDK', 'https://github.com/anthropics/anthropic-sdk-typescript/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('openai_gh', 'OpenAI SDK', 'https://github.com/openai/openai-python/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('meta_gh', 'Llama Models', 'https://github.com/meta-llama/llama-models/releases.atom', 'model_release', true, '2026-06-10T00:00:00.000Z'),
+	('hf_transformers', 'HF Transformers', 'https://github.com/huggingface/transformers/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('mistral_gh', 'Mistral Inference', 'https://github.com/mistralai/mistral-inference/releases.atom', 'product', true, '2026-06-10T00:00:00.000Z'),
+	('google_gh', 'Gemma', 'https://github.com/google-deepmind/gemma/releases.atom', 'model_release', true, '2026-06-10T00:00:00.000Z'),
+	('simonwillison', 'Simon Willison', 'https://simonwillison.net/atom/everything/', 'product', true, '2026-06-10T00:00:00.000Z');

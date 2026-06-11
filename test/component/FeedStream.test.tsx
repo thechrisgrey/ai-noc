@@ -21,6 +21,8 @@ function renderStream(overrides: Partial<Parameters<typeof FeedStream>[0]> = {})
     newSignals: 0,
     onDismissNewSignals: () => {},
     onToggleBookmark: () => {},
+    onMarkRead: () => {},
+    selectedItemId: null,
     ...overrides,
   };
   return render(<FeedStream {...props} />);

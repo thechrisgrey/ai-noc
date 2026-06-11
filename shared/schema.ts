@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, index, vector } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -24,6 +24,10 @@ export const feedItems = pgTable("feed_items", {
   imageUrl: text("image_url"),
   clusterId: text("cluster_id"),
   priority: integer("priority").notNull().default(0),
+  readAt: text("read_at"),
+  // Titan v2 embedding (1024-d, cosine-normalized). NULL until the ingest
+  // sweep embeds the item; backfill self-heals transient failures.
+  embedding: vector("embedding", { dimensions: 1024 }),
 }, (table) => [
   index("idx_published_at").on(table.publishedAt),
   index("idx_category_published").on(table.category, table.publishedAt),
@@ -46,6 +50,10 @@ export const watchlists = pgTable("watchlists", {
   source: text("source"),
   search: text("search"),
   sort: text("sort"),
+  // When true, new ingested items matching this watchlist push a real-time
+  // alert; lastTriggeredAt stamps the most recent hit (canonical UTC ISO).
+  alert: boolean("alert").notNull().default(false),
+  lastTriggeredAt: text("last_triggered_at"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -54,12 +62,28 @@ export const briefings = pgTable("briefings", {
   content: text("content").notNull(),
   itemCount: integer("item_count").notNull(),
   generatedAt: text("generated_at").notNull(),
+  // 'hourly' (the rolling executive briefing) or 'daily_digest' (the once-a-day
+  // SES-delivered roundup). The archive UI filters on this.
+  kind: text("kind").notNull().default("hourly"),
+});
+
+// RSS/Atom feed sources. slug doubles as feed_items.source; deleting a source
+// intentionally orphans its items (they keep the slug).
+export const sources = pgTable("sources", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  label: text("label").notNull(),
+  url: text("url").notNull().unique(),
+  defaultCategory: text("default_category").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: text("created_at").notNull(),
 });
 
 export const insertFeedItemSchema = createInsertSchema(feedItems).omit({ id: true });
 export const insertBookmarkSchema = createInsertSchema(bookmarks).omit({ id: true });
 export const insertWatchlistSchema = createInsertSchema(watchlists).omit({ id: true });
 export const insertBriefingSchema = createInsertSchema(briefings).omit({ id: true });
+export const insertSourceSchema = createInsertSchema(sources).omit({ id: true });
 
 export type FeedItem = typeof feedItems.$inferSelect;
 export type InsertFeedItem = z.infer<typeof insertFeedItemSchema>;
@@ -69,3 +93,5 @@ export type Watchlist = typeof watchlists.$inferSelect;
 export type InsertWatchlist = z.infer<typeof insertWatchlistSchema>;
 export type Briefing = typeof briefings.$inferSelect;
 export type InsertBriefing = z.infer<typeof insertBriefingSchema>;
+export type Source = typeof sources.$inferSelect;
+export type InsertSource = z.infer<typeof insertSourceSchema>;

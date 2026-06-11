@@ -30,6 +30,12 @@ export function StatusBar({ lastSynced }: { lastSynced?: string }) {
           </span>
         </>
       )}
+      <span
+        aria-hidden="true"
+        className="hidden lg:inline ml-auto text-[10px] tracking-[0.14em] text-muted-foreground/50 data-readout"
+      >
+        J/K NAVIGATE · O OPEN · B SAVE
+      </span>
     </div>
   );
 }

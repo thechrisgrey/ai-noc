@@ -13,6 +13,7 @@ Real-time AI-industry intelligence dashboard. Ingests RSS/Atom feeds from AI lab
 
 - Node 20
 - Local PostgreSQL (for `npm run dev`; tests do not need it)
+- pgvector extension for the semantic embedding layer (`brew install pgvector`, then `CREATE EXTENSION vector;`). To run without it, set `EMBEDDINGS_ENABLED=false`. Tests use PGlite's bundled vector extension, so no local install is needed.
 
 ## Environment variables
 
@@ -24,9 +25,12 @@ Copy `.env.example` to `.env` and fill in values. See `.env.example` for the ful
 | `DB_USERNAME` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME` | Individual Postgres connection parts |
 | `BEDROCK_REGION` | AWS region for Bedrock briefing generation |
 | `BEDROCK_MODEL_ID` | Bedrock model/inference-profile ID |
+| `EMBEDDINGS_ENABLED` | Semantic embedding layer (Titan v2); set `false` to disable (default on) |
+| `CLUSTER_SIM_THRESHOLD` | Cosine threshold for embedding-based clustering (default `0.80`) |
 | `SEED_DEMO_DATA` | Dev-only demo data seeding; never set in production |
 | `TRUST_PROXY_HOPS` | Number of trusted proxy hops in front of Express |
 | `ORIGIN_VERIFY_TOKEN` | Shared secret verifying requests came through the CDN |
+| `RETENTION_DAYS` | Days to keep unbookmarked feed items; pruning disabled unless > 0 (e.g. `90`) |
 
 ## Scripts
 

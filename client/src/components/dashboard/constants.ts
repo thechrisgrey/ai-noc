@@ -6,12 +6,16 @@ import { SiOpenai, SiMeta, SiGoogle, SiNvidia } from "react-icons/si";
 
 // ─── Types ───────────────────────────────────────────────────────
 
-export type FeedItemWithBookmark = FeedItem & { isBookmarked: boolean };
+export type FeedItemWithBookmark = FeedItem & {
+  isBookmarked: boolean;
+  coverageCount?: number;
+};
 export type Stats = {
   total: number;
   byCategory: Record<string, number>;
   bySource: Record<string, number>;
   breakingCount: number;
+  unreadCount: number;
   lastRefreshed?: string;
 };
 export type Category =

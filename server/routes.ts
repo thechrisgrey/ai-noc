@@ -4,11 +4,41 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { timingSafeEqualStr } from "./originVerify";
 import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
-import { fetchAllFeeds, seedDemoData } from "./feedEngine";
+import { fetchAllFeeds, probeFeedUrl, seedDemoData, type FetchResult } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
+import { generateDailyDigest } from "./digest";
+import { deliverDigest } from "./deliver";
+import { clearWatchlistEmbeddingCache } from "./watchlistMatcher";
+import { validateSourceInput, SOURCE_CATEGORIES } from "./sourceValidation";
+import { embedText, isEmbeddingsEnabled } from "./embeddings";
 
 let lastRefreshed: string | null = null;
+
+// In-process LRU for query embeddings, keyed by lowercased query. Bounds the
+// Bedrock cost of repeated identical semantic searches without a cache server.
+const QUERY_EMBED_CACHE_MAX = 50;
+const queryEmbedCache = new Map<string, number[]>();
+
+async function embedQuery(query: string): Promise<number[] | null> {
+  const key = query.toLowerCase();
+  const cached = queryEmbedCache.get(key);
+  if (cached) {
+    // Refresh recency (Map preserves insertion order).
+    queryEmbedCache.delete(key);
+    queryEmbedCache.set(key, cached);
+    return cached;
+  }
+  const vec = await embedText(query);
+  if (vec) {
+    queryEmbedCache.set(key, vec);
+    if (queryEmbedCache.size > QUERY_EMBED_CACHE_MAX) {
+      const oldest = queryEmbedCache.keys().next().value;
+      if (oldest !== undefined) queryEmbedCache.delete(oldest);
+    }
+  }
+  return vec;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -42,6 +72,32 @@ export async function registerRoutes(
     });
   }
 
+  // Single place that turns a fetch result into the WebSocket fan-out: the
+  // new-items badge, high-priority alerts, and one message per watchlist hit.
+  // Shared by all three fetch sites (startup, interval, manual refresh).
+  async function broadcastFetchResults(result: FetchResult) {
+    const { newItemCount, newItemIds, watchlistHits } = result;
+    lastRefreshed = new Date().toISOString();
+    if (newItemCount > 0) {
+      broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
+      const newItems = await storage.getItemsByIds(newItemIds);
+      const highPriority = newItems
+        .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
+        .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
+      if (highPriority.length > 0) {
+        broadcast({ type: "alert", items: highPriority });
+      }
+    }
+    for (const hit of watchlistHits) {
+      broadcast({
+        type: "watchlist_hit",
+        watchlistId: hit.watchlistId,
+        name: hit.name,
+        items: hit.items,
+      });
+    }
+  }
+
   // Seed demo data on startup (non-blocking — DB may not be ready yet)
   try {
     await seedDemoData();
@@ -51,19 +107,7 @@ export async function registerRoutes(
 
   // Try fetching real feeds in background (don't block startup)
   fetchAllFeeds()
-    .then(async ({ newItemCount, newItemIds }) => {
-      lastRefreshed = new Date().toISOString();
-      if (newItemCount > 0) {
-        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-        const newItems = await storage.getItemsByIds(newItemIds);
-        const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-        if (highPriority.length > 0) {
-          broadcast({ type: "alert", items: highPriority });
-        }
-      }
-    })
+    .then((result) => broadcastFetchResults(result))
     .then(() => generateBriefing().catch(err => console.error("[Briefing] Initial generation failed:", err.message)))
     .catch(err => console.error("[Routes] Initial feed fetch failed:", err.message));
 
@@ -72,22 +116,63 @@ export async function registerRoutes(
     generateBriefing().catch(err => console.error("[Briefing] Hourly generation failed:", err.message));
   }, 60 * 60 * 1000);
 
+  // Daily digest: self-rescheduling timer that fires at the top of the
+  // DIGEST_HOUR_UTC hour, generates the digest, and delivers it. An empty
+  // DIGEST_HOUR_UTC disables the schedule entirely.
+  const digestHourRaw = process.env.DIGEST_HOUR_UTC ?? "12";
+  if (digestHourRaw.trim() !== "") {
+    const digestHour = parseInt(digestHourRaw, 10);
+    if (Number.isInteger(digestHour) && digestHour >= 0 && digestHour <= 23) {
+      const msUntilNextDigestHour = (): number => {
+        const now = new Date();
+        const next = new Date(now);
+        next.setUTCHours(digestHour, 0, 0, 0);
+        if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+        return next.getTime() - now.getTime();
+      };
+
+      const runDigest = async () => {
+        try {
+          // Guard against a restart double-fire: skip if the latest digest is
+          // less than 20h old.
+          const latest = await storage.getLatestBriefing("daily_digest");
+          const recentlyRan =
+            latest &&
+            Date.now() - new Date(latest.generatedAt).getTime() < 20 * 60 * 60 * 1000;
+          if (!recentlyRan) {
+            const content = await generateDailyDigest();
+            if (content) await deliverDigest(content);
+          }
+        } catch (err) {
+          console.error("[Digest] Scheduled run failed:", (err as Error).message);
+        } finally {
+          setTimeout(runDigest, msUntilNextDigestHour());
+        }
+      };
+
+      setTimeout(runDigest, msUntilNextDigestHour());
+    } else {
+      console.error(`[Digest] Invalid DIGEST_HOUR_UTC "${digestHourRaw}" — digest disabled`);
+    }
+  }
+
+  // Retention pruning: delete unbookmarked items older than RETENTION_DAYS.
+  // Disabled unless the env var parses to a positive integer.
+  const retentionDays = parseInt(process.env.RETENTION_DAYS || "", 10);
+  if (retentionDays > 0) {
+    const prune = () =>
+      storage
+        .pruneOldItems(retentionDays)
+        .then((pruned) => console.log(`[Retention] Pruned ${pruned} items older than ${retentionDays} days`))
+        .catch((err) => console.error("[Retention] Prune failed:", err.message));
+    setTimeout(prune, 5 * 60 * 1000);
+    setInterval(prune, 24 * 60 * 60 * 1000);
+  }
+
   // Poll feeds every 2 minutes for near-real-time coverage
   setInterval(() => {
     fetchAllFeeds()
-      .then(async ({ newItemCount, newItemIds }) => {
-        lastRefreshed = new Date().toISOString();
-        if (newItemCount > 0) {
-          broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-          const newItems = await storage.getItemsByIds(newItemIds);
-          const highPriority = newItems
-            .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-            .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-          if (highPriority.length > 0) {
-            broadcast({ type: "alert", items: highPriority });
-          }
-        }
-      })
+      .then((result) => broadcastFetchResults(result))
       .catch(err => console.error("[Routes] Periodic feed fetch failed:", err.message));
   }, 2 * 60 * 1000);
 
@@ -113,10 +198,31 @@ export async function registerRoutes(
     }
   });
 
+  // Decorate items with isBookmarked + coverageCount (shared by both the
+  // lexical/cursor path and the semantic path so the envelope stays identical).
+  async function decorateItems(items: Awaited<ReturnType<typeof storage.getFeedItems>>["items"]) {
+    const bookmarkedIds = await storage.getBookmarkedIds(items.map((i) => i.id));
+    const clusterIds = Array.from(
+      new Set(items.map((i) => i.clusterId).filter((c): c is string => !!c)),
+    );
+    const clusterCounts = await storage.getClusterCounts(clusterIds);
+    return items.map((item) => {
+      // Drop the 1024-float embedding from the wire payload: the client never
+      // reads it, it bloats the response ~15-25KB/item, and the two feed paths
+      // disagree on its shape (lexical: number[], semantic: pgvector string).
+      const { embedding: _embedding, ...rest } = item;
+      return {
+        ...rest,
+        isBookmarked: bookmarkedIds.has(item.id),
+        coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
+      };
+    });
+  }
+
   // Get feed items with optional filters + cursor pagination
   app.get("/api/feed", async (req, res) => {
     try {
-      const { limit, cursor, category, source, search, sort } = req.query;
+      const { limit, cursor, category, source, search, sort, mode } = req.query;
 
       // Validate & sanitize inputs
       const validCategories = ["all", "model_release", "research", "funding", "product", "policy", "infrastructure"];
@@ -125,6 +231,22 @@ export async function registerRoutes(
       const safeSort = sort === "priority" ? "priority" as const : "time" as const;
       const safeSource = typeof source === "string" && /^[a-z0-9_]+$/.test(source) ? source : undefined;
       const safeSearch = typeof search === "string" ? search.trim().slice(0, 200) || undefined : undefined;
+
+      // Semantic mode: embed the query and rank by cosine distance. Bypasses
+      // cursor pagination (nextCursor null). Falls through to lexical when the
+      // query is empty, embeddings are disabled, or the embed call fails.
+      if (mode === "semantic" && safeSearch && isEmbeddingsEnabled()) {
+        const queryVec = await embedQuery(safeSearch);
+        if (queryVec) {
+          const items = await storage.searchSemantic(queryVec, {
+            limit: safeLimit,
+            category: safeCategory,
+            source: safeSource,
+          });
+          const decorated = await decorateItems(items);
+          return res.json({ items: decorated, nextCursor: null });
+        }
+      }
 
       const result = await storage.getFeedItems({
         limit: safeLimit,
@@ -135,14 +257,7 @@ export async function registerRoutes(
         sort: safeSort,
       });
 
-      // Batch bookmark check (1 query instead of N)
-      const bookmarkedIds = await storage.getBookmarkedIds(
-        result.items.map((i) => i.id),
-      );
-      const itemsWithBookmarks = result.items.map((item) => ({
-        ...item,
-        isBookmarked: bookmarkedIds.has(item.id),
-      }));
+      const itemsWithBookmarks = await decorateItems(result.items);
 
       res.json({ items: itemsWithBookmarks, nextCursor: result.nextCursor });
     } catch (err) {
@@ -163,21 +278,72 @@ export async function registerRoutes(
   // Trigger manual feed refresh
   app.post("/api/feed/refresh", async (_req, res) => {
     try {
-      const { newItemCount, newItemIds } = await fetchAllFeeds();
-      lastRefreshed = new Date().toISOString();
-      if (newItemCount > 0) {
-        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-        const newItems = await storage.getItemsByIds(newItemIds);
-        const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-        if (highPriority.length > 0) {
-          broadcast({ type: "alert", items: highPriority });
-        }
-      }
-      res.json({ newItems: newItemCount, lastRefreshed });
+      const result = await fetchAllFeeds();
+      await broadcastFetchResults(result);
+      res.json({ newItems: result.newItemCount, lastRefreshed });
     } catch (err) {
       res.status(500).json({ error: "Failed to refresh feeds" });
+    }
+  });
+
+  // Mark specific items as read
+  app.post("/api/items/read", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (
+        !Array.isArray(ids) ||
+        ids.length < 1 ||
+        ids.length > 200 ||
+        !ids.every((id) => Number.isInteger(id))
+      ) {
+        return res.status(400).json({ error: "ids must be an array of 1-200 integers" });
+      }
+      await storage.markRead(ids);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to mark items read" });
+    }
+  });
+
+  // Mark everything published at or before a timestamp as read
+  app.post("/api/feed/read-all", async (req, res) => {
+    try {
+      const { before } = req.body;
+      if (typeof before !== "string" || Number.isNaN(Date.parse(before))) {
+        return res.status(400).json({ error: "before must be a parseable ISO date string" });
+      }
+      await storage.markAllRead(before);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to mark all read" });
+    }
+  });
+
+  // Cluster siblings for a feed item (other sources covering the same story)
+  app.get("/api/items/:id/cluster", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const siblings = await storage.getClusterSiblings(id);
+      res.json(siblings);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch cluster siblings" });
+    }
+  });
+
+  // Semantically related items (nearest embeddings, excluding self + cluster)
+  app.get("/api/items/:id/related", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const related = await storage.getRelatedItems(id);
+      res.json(related);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch related items" });
     }
   });
 
@@ -188,6 +354,19 @@ export async function registerRoutes(
       res.json(activity);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source activity" });
+    }
+  });
+
+  // Source intelligence: first-mover leaderboard over a 7/30/90-day window
+  app.get("/api/sources/intel", async (req, res) => {
+    try {
+      const allowed = [7, 30, 90];
+      const requested = parseInt(req.query.days as string, 10);
+      const windowDays = allowed.includes(requested) ? requested : 30;
+      const sources = await storage.getSourceIntel(windowDays);
+      res.json({ windowDays, sources });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch source intel" });
     }
   });
 
@@ -202,10 +381,111 @@ export async function registerRoutes(
     }
   });
 
+  // Source management
+  app.get("/api/sources", async (_req, res) => {
+    try {
+      const [rows, stats] = await Promise.all([storage.getSources(), storage.getStats()]);
+      const health = getHealthMap();
+      res.json(
+        rows.map((s) => ({
+          ...s,
+          itemCount: stats.bySource[s.slug] ?? 0,
+          health: health[s.slug] ?? null,
+        })),
+      );
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch sources" });
+    }
+  });
+
+  app.post("/api/sources", async (req, res) => {
+    try {
+      const existing = await storage.getSources();
+      const validated = validateSourceInput(
+        req.body ?? {},
+        existing.map((s) => s.slug),
+      );
+      if (!validated.ok) {
+        return res.status(400).json({ error: validated.error });
+      }
+      if (existing.some((s) => s.url === validated.url)) {
+        return res.status(409).json({ error: "A source with this URL already exists" });
+      }
+
+      let probe: { feedTitle: string; itemCount: number };
+      try {
+        probe = await probeFeedUrl(validated.url);
+      } catch (err) {
+        // Never echo the upstream/resolver error to the client — it would leak
+        // whether the URL reached an internal host (SSRF probe oracle).
+        console.error("[Sources] Feed probe failed:", (err as Error).message);
+        return res.status(422).json({ error: "Could not fetch a valid feed from that URL" });
+      }
+
+      const created = await storage.createSource({
+        slug: validated.slug,
+        label: validated.label,
+        url: validated.url,
+        defaultCategory: validated.defaultCategory,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      });
+      res.json({ ...created, feedTitle: probe.feedTitle, itemCount: probe.itemCount });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create source" });
+    }
+  });
+
+  app.patch("/api/sources/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const { enabled, label, defaultCategory } = req.body ?? {};
+      if (enabled !== undefined && typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+      if (label !== undefined && (typeof label !== "string" || !label.trim())) {
+        return res.status(400).json({ error: "label must be a non-empty string" });
+      }
+      if (defaultCategory !== undefined && !SOURCE_CATEGORIES.includes(defaultCategory)) {
+        return res
+          .status(400)
+          .json({ error: `defaultCategory must be one of: ${SOURCE_CATEGORIES.join(", ")}` });
+      }
+      const updated = await storage.updateSource(id, {
+        enabled,
+        label: typeof label === "string" ? label.trim() : undefined,
+        defaultCategory,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "Source not found" });
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update source" });
+    }
+  });
+
+  // Existing feed_items keep the deleted source's slug — intentional orphans.
+  app.delete("/api/sources/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      await storage.deleteSource(id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete source" });
+    }
+  });
+
   // Briefing
   app.get("/api/briefing", async (_req, res) => {
     try {
-      const briefing = await storage.getLatestBriefing();
+      const briefing = await storage.getLatestBriefing("hourly");
       res.json(briefing || { content: null, generatedAt: null, itemCount: 0 });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch briefing" });
@@ -216,13 +496,27 @@ export async function registerRoutes(
     try {
       const content = await generateBriefing();
       if (content) {
-        const briefing = await storage.getLatestBriefing();
+        const briefing = await storage.getLatestBriefing("hourly");
         res.json(briefing);
       } else {
         res.status(503).json({ error: "Could not generate briefing" });
       }
     } catch (err) {
       res.status(500).json({ error: "Failed to regenerate briefing" });
+    }
+  });
+
+  // Briefing archive: filter by kind (hourly | daily_digest), clamp the limit.
+  app.get("/api/briefings", async (req, res) => {
+    try {
+      const validKinds = ["hourly", "daily_digest"];
+      const { kind, limit } = req.query;
+      const safeKind = validKinds.includes(kind as string) ? (kind as string) : undefined;
+      const safeLimit = Math.max(1, Math.min(parseInt(limit as string) || 20, 50));
+      const rows = await storage.getBriefings({ kind: safeKind, limit: safeLimit });
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch briefings" });
     }
   });
 
@@ -250,9 +544,37 @@ export async function registerRoutes(
         sort: sort || null,
         createdAt: new Date().toISOString(),
       });
+      clearWatchlistEmbeddingCache();
       res.json(wl);
     } catch (err) {
       res.status(500).json({ error: "Failed to create watchlist" });
+    }
+  });
+
+  app.patch("/api/watchlists/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const { alert, name } = req.body ?? {};
+      if (alert !== undefined && typeof alert !== "boolean") {
+        return res.status(400).json({ error: "alert must be a boolean" });
+      }
+      if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+        return res.status(400).json({ error: "name must be a non-empty string" });
+      }
+      const updated = await storage.updateWatchlist(id, {
+        alert,
+        name: typeof name === "string" ? name.trim() : undefined,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "Watchlist not found" });
+      }
+      clearWatchlistEmbeddingCache();
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update watchlist" });
     }
   });
 
@@ -260,6 +582,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.deleteWatchlist(id);
+      clearWatchlistEmbeddingCache();
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete watchlist" });

@@ -4,61 +4,75 @@ import { clusterRecentItems } from "./clustering";
 import { recomputePriorities } from "./priority";
 import { recordSuccess, recordFailure } from "./feedHealth";
 import { buildDemoItems } from "./demoData";
-import type { InsertFeedItem } from "@shared/schema";
+import { embedMany, isEmbeddingsEnabled } from "./embeddings";
+import { evaluateWatchlists, getWatchlistEmbeddings } from "./watchlistMatcher";
+import { guardedLookup } from "./ssrfGuard";
+import type { FeedItem, InsertFeedItem } from "@shared/schema";
+
+/** A watchlist alert: the watchlist that matched plus the items that hit it. */
+export interface WatchlistHit {
+  watchlistId: number;
+  name: string;
+  items: { id: number; title: string; sourceLabel: string }[];
+}
+
+export interface FetchResult {
+  newItemCount: number;
+  newItemIds: number[];
+  watchlistHits: WatchlistHit[];
+}
+
+// Cap the per-cycle self-healing backfill so a long NULL backlog never blocks
+// a fetch cycle; the dedicated backfill script drains the rest.
+const BACKFILL_SWEEP_LIMIT = 25;
+
+/** Build the text Titan embeds for an item: "title: description". */
+function embedInput(item: { title: string; description: string | null }): string {
+  return item.title + (item.description ? ": " + item.description : "");
+}
+
+/**
+ * Embed the given items and persist their vectors. Failures leave embedding
+ * NULL so the next sweep retries; never throws.
+ */
+async function embedAndPersist(items: FeedItem[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const vectors = await embedMany(items.map(embedInput));
+    const updates: { id: number; embedding: number[] }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const vec = vectors[i];
+      if (vec) updates.push({ id: items[i].id, embedding: vec });
+    }
+    if (updates.length > 0) await storage.updateEmbeddings(updates);
+  } catch (err) {
+    console.error("[FeedEngine] Embedding persist failed:", (err as Error).message);
+  }
+}
 
 const parser = new RssParser({
   timeout: 10000,
   headers: {
     'User-Agent': 'AI-Ops-Center/1.0',
   },
+  // SSRF hardening: rss-parser follows HTTP redirects with no re-validation of
+  // the target host or scheme, so a "valid" public feed can 3xx to an internal
+  // VPC address (Fargate task-credential endpoint, RDS, link-local metadata).
+  // guardedLookup runs on every hop's socket connect and rejects any host that
+  // resolves to a private/loopback/link-local address — also closing the
+  // DNS-rebinding gap where a public hostname points at a private IP.
+  requestOptions: {
+    lookup: guardedLookup,
+  },
 });
 
-// RSS/Atom feed sources for the AI ecosystem
+// Per-cycle fetch shape, mapped from the sources table (slug -> source).
 interface FeedSource {
   url: string;
   source: string;
   sourceLabel: string;
   defaultCategory: string;
 }
-
-const FEED_SOURCES: FeedSource[] = [
-  // Major AI Labs - Blogs
-  { url: "https://openai.com/blog/rss/", source: "openai", sourceLabel: "OpenAI", defaultCategory: "model_release" },
-  { url: "https://www.anthropic.com/feed.xml", source: "anthropic", sourceLabel: "Anthropic", defaultCategory: "research" },
-  { url: "https://blog.google/technology/ai/rss/", source: "google_ai", sourceLabel: "Google AI", defaultCategory: "product" },
-  { url: "https://about.fb.com/news/category/ai-ml/feed/", source: "meta_ai", sourceLabel: "Meta AI", defaultCategory: "research" },
-  { url: "https://mistral.ai/feed.xml", source: "mistral", sourceLabel: "Mistral AI", defaultCategory: "model_release" },
-
-  // Research & News Aggregators
-  { url: "https://arxiv.org/rss/cs.AI", source: "arxiv_ai", sourceLabel: "arXiv AI", defaultCategory: "research" },
-  { url: "https://arxiv.org/rss/cs.CL", source: "arxiv_nlp", sourceLabel: "arXiv NLP", defaultCategory: "research" },
-  { url: "https://arxiv.org/rss/cs.LG", source: "arxiv_ml", sourceLabel: "arXiv ML", defaultCategory: "research" },
-
-  // Tech news covering AI
-  { url: "https://techcrunch.com/category/artificial-intelligence/feed/", source: "techcrunch", sourceLabel: "TechCrunch AI", defaultCategory: "product" },
-  { url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", source: "theverge", sourceLabel: "The Verge AI", defaultCategory: "product" },
-  { url: "https://venturebeat.com/category/ai/feed/", source: "venturebeat", sourceLabel: "VentureBeat AI", defaultCategory: "product" },
-
-  // AI-specific publications
-  { url: "https://the-decoder.com/feed/", source: "the_decoder", sourceLabel: "The Decoder", defaultCategory: "product" },
-  { url: "https://www.marktechpost.com/feed/", source: "marktechpost", sourceLabel: "MarkTechPost", defaultCategory: "research" },
-
-  // Hugging Face blog
-  { url: "https://huggingface.co/blog/feed.xml", source: "huggingface", sourceLabel: "Hugging Face", defaultCategory: "model_release" },
-
-  // GitHub Release Feeds — track SDK & tool releases from key AI orgs
-  { url: "https://github.com/anthropics/anthropic-sdk-python/releases.atom", source: "anthropic_gh", sourceLabel: "Anthropic SDK", defaultCategory: "product" },
-  { url: "https://github.com/anthropics/claude-code/releases.atom", source: "anthropic_gh", sourceLabel: "Claude Code", defaultCategory: "product" },
-  { url: "https://github.com/anthropics/anthropic-sdk-typescript/releases.atom", source: "anthropic_gh", sourceLabel: "Anthropic TS SDK", defaultCategory: "product" },
-  { url: "https://github.com/openai/openai-python/releases.atom", source: "openai_gh", sourceLabel: "OpenAI SDK", defaultCategory: "product" },
-  { url: "https://github.com/meta-llama/llama-models/releases.atom", source: "meta_gh", sourceLabel: "Llama Models", defaultCategory: "model_release" },
-  { url: "https://github.com/huggingface/transformers/releases.atom", source: "hf_transformers", sourceLabel: "HF Transformers", defaultCategory: "product" },
-  { url: "https://github.com/mistralai/mistral-inference/releases.atom", source: "mistral_gh", sourceLabel: "Mistral Inference", defaultCategory: "product" },
-  { url: "https://github.com/google-deepmind/gemma/releases.atom", source: "google_gh", sourceLabel: "Gemma", defaultCategory: "model_release" },
-
-  // Individual AI voices & analysts
-  { url: "https://simonwillison.net/atom/everything/", source: "simonwillison", sourceLabel: "Simon Willison", defaultCategory: "product" },
-];
 
 // Keywords that help categorize items beyond default
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
@@ -194,13 +208,62 @@ async function fetchFeed(source: FeedSource): Promise<InsertFeedItem[]> {
   }
 }
 
-export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemIds: number[] }> {
-  console.log(`[FeedEngine] Fetching ${FEED_SOURCES.length} feeds...`);
+/**
+ * Evaluate alert-enabled watchlists against the just-ingested items, stamping
+ * lastTriggeredAt on every watchlist that hit. Re-reads the items so semantic
+ * matching sees freshly persisted embeddings. Never throws — returns [] on any
+ * failure so a watchlist problem can't break the fetch cycle.
+ */
+async function evaluateWatchlistAlerts(newItemIds: number[]): Promise<WatchlistHit[]> {
+  if (newItemIds.length === 0) return [];
+  try {
+    const watchlists = (await storage.getWatchlists()).filter((wl) => wl.alert);
+    if (watchlists.length === 0) return [];
+
+    const items = await storage.getItemsByIds(newItemIds);
+    const embeddingsByWatchlistId = isEmbeddingsEnabled()
+      ? await getWatchlistEmbeddings(watchlists)
+      : new Map<number, number[]>();
+    const hitMap = evaluateWatchlists(items, watchlists, embeddingsByWatchlistId);
+
+    const stampedAt = new Date().toISOString();
+    const hits: WatchlistHit[] = [];
+    for (const wl of watchlists) {
+      const matched = hitMap.get(wl.id);
+      if (!matched || matched.length === 0) continue;
+      await storage.updateWatchlist(wl.id, { lastTriggeredAt: stampedAt });
+      hits.push({
+        watchlistId: wl.id,
+        name: wl.name,
+        items: matched.map((i) => ({
+          id: i.id,
+          title: i.title,
+          sourceLabel: i.sourceLabel,
+        })),
+      });
+    }
+    return hits;
+  } catch (err) {
+    console.error("[FeedEngine] Watchlist evaluation failed:", (err as Error).message);
+    return [];
+  }
+}
+
+export async function fetchAllFeeds(): Promise<FetchResult> {
+  const enabledSources = await storage.getSources(true);
+  const feedSources: FeedSource[] = enabledSources.map((s) => ({
+    url: s.url,
+    source: s.slug,
+    sourceLabel: s.label,
+    defaultCategory: s.defaultCategory,
+  }));
+
+  console.log(`[FeedEngine] Fetching ${feedSources.length} feeds...`);
   let newItemCount = 0;
   const newItemIds: number[] = [];
 
   const results = await Promise.allSettled(
-    FEED_SOURCES.map(source => fetchFeed(source))
+    feedSources.map(source => fetchFeed(source))
   );
 
   for (const result of results) {
@@ -222,6 +285,22 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
 
   console.log(`[FeedEngine] Fetched ${newItemCount} new items`);
 
+  // Embed new items, then sweep up to BACKFILL_SWEEP_LIMIT stragglers whose
+  // prior embed failed — this runs before clustering so cosine clustering sees
+  // fresh vectors. Disabled wholesale via EMBEDDINGS_ENABLED=false.
+  if (isEmbeddingsEnabled()) {
+    try {
+      if (newItemIds.length > 0) {
+        const newItems = await storage.getItemsByIds(newItemIds);
+        await embedAndPersist(newItems);
+      }
+      const stragglers = await storage.getItemsMissingEmbeddings(BACKFILL_SWEEP_LIMIT);
+      await embedAndPersist(stragglers);
+    } catch (err) {
+      console.error("[FeedEngine] Embedding sweep failed:", (err as Error).message);
+    }
+  }
+
   // Always cluster + recompute (both diff-only and re-entrance-guarded);
   // running on quiet cycles is what guarantees stale priorities decay.
   try {
@@ -231,7 +310,26 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
     console.error("[FeedEngine] Post-fetch processing failed:", (err as Error).message);
   }
 
-  return { newItemCount, newItemIds };
+  // Alert on watchlist hits against only the new items (after embeddings land
+  // so semantic watchlists can match on vectors).
+  const watchlistHits = await evaluateWatchlistAlerts(newItemIds);
+
+  return { newItemCount, newItemIds, watchlistHits };
+}
+
+/**
+ * Live probe for user-submitted feed URLs. Shares the engine's parser (and its
+ * 10s timeout); throws with the parse error so callers can surface it.
+ */
+export async function probeFeedUrl(
+  url: string,
+): Promise<{ feedTitle: string; itemCount: number }> {
+  const feed = await parser.parseURL(url);
+  const feedTitle = (feed.title || "").trim();
+  const itemCount = (feed.items || []).length;
+  if (!feedTitle) throw new Error("Feed parsed but has no title");
+  if (itemCount < 1) throw new Error("Feed parsed but contains no entries");
+  return { feedTitle, itemCount };
 }
 
 // Seed synthetic data for local development demos only

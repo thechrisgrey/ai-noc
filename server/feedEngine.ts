@@ -6,6 +6,7 @@ import { recordSuccess, recordFailure } from "./feedHealth";
 import { buildDemoItems } from "./demoData";
 import { embedMany, isEmbeddingsEnabled } from "./embeddings";
 import { evaluateWatchlists, getWatchlistEmbeddings } from "./watchlistMatcher";
+import { guardedLookup } from "./ssrfGuard";
 import type { FeedItem, InsertFeedItem } from "@shared/schema";
 
 /** A watchlist alert: the watchlist that matched plus the items that hit it. */
@@ -53,6 +54,15 @@ const parser = new RssParser({
   timeout: 10000,
   headers: {
     'User-Agent': 'AI-Ops-Center/1.0',
+  },
+  // SSRF hardening: rss-parser follows HTTP redirects with no re-validation of
+  // the target host or scheme, so a "valid" public feed can 3xx to an internal
+  // VPC address (Fargate task-credential endpoint, RDS, link-local metadata).
+  // guardedLookup runs on every hop's socket connect and rejects any host that
+  // resolves to a private/loopback/link-local address — also closing the
+  // DNS-rebinding gap where a public hostname points at a private IP.
+  requestOptions: {
+    lookup: guardedLookup,
   },
 });
 

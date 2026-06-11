@@ -76,6 +76,45 @@ describe("updateEmbeddings + searchSemantic (PGlite + vector)", () => {
     const results = await storage.searchSemantic(unitVector(0), { limit: 50 });
     expect(results.some((r) => r.guid === "no-embedding")).toBe(false);
   });
+
+  it("applies category and source equality filters when provided", async () => {
+    const a = await storage.createFeedItem(
+      makeItem("filt-policy-openai", { category: "policy", source: "openai", sourceLabel: "OpenAI" }),
+    );
+    const b = await storage.createFeedItem(
+      makeItem("filt-policy-meta", { category: "policy", source: "meta_ai", sourceLabel: "Meta AI" }),
+    );
+    const c = await storage.createFeedItem(
+      makeItem("filt-research-openai", { category: "research", source: "openai", sourceLabel: "OpenAI" }),
+    );
+    await storage.updateEmbeddings([
+      { id: a.id, embedding: unitVector(5) },
+      { id: b.id, embedding: unitVector(5) },
+      { id: c.id, embedding: unitVector(5) },
+    ]);
+
+    const byCategory = await storage.searchSemantic(unitVector(5), { limit: 50, category: "policy" });
+    const catGuids = byCategory.map((r) => r.guid);
+    expect(catGuids).toContain("filt-policy-openai");
+    expect(catGuids).toContain("filt-policy-meta");
+    expect(catGuids).not.toContain("filt-research-openai");
+
+    const byBoth = await storage.searchSemantic(unitVector(5), {
+      limit: 50,
+      category: "policy",
+      source: "openai",
+    });
+    const bothGuids = byBoth.map((r) => r.guid);
+    expect(bothGuids).toContain("filt-policy-openai");
+    expect(bothGuids).not.toContain("filt-policy-meta");
+    expect(bothGuids).not.toContain("filt-research-openai");
+
+    // "all" sentinels are treated as no-op filters.
+    const allCat = await storage.searchSemantic(unitVector(5), { limit: 50, category: "all", source: "all" });
+    const allGuids = allCat.map((r) => r.guid);
+    expect(allGuids).toContain("filt-policy-openai");
+    expect(allGuids).toContain("filt-research-openai");
+  });
 });
 
 describe("getRelatedItems (PGlite + vector)", () => {

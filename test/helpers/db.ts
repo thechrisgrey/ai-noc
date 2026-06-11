@@ -45,6 +45,6 @@ export async function createTestStorage() {
 
 export async function resetTestStorage(client: PGlite): Promise<void> {
   await client.query(
-    `TRUNCATE TABLE bookmarks, feed_items, watchlists, briefings RESTART IDENTITY CASCADE;`,
+    `TRUNCATE TABLE bookmarks, feed_items, watchlists, briefings, sources RESTART IDENTITY CASCADE;`,
   );
 }

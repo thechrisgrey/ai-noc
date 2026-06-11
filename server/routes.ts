@@ -206,11 +206,17 @@ export async function registerRoutes(
       new Set(items.map((i) => i.clusterId).filter((c): c is string => !!c)),
     );
     const clusterCounts = await storage.getClusterCounts(clusterIds);
-    return items.map((item) => ({
-      ...item,
-      isBookmarked: bookmarkedIds.has(item.id),
-      coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
-    }));
+    return items.map((item) => {
+      // Drop the 1024-float embedding from the wire payload: the client never
+      // reads it, it bloats the response ~15-25KB/item, and the two feed paths
+      // disagree on its shape (lexical: number[], semantic: pgvector string).
+      const { embedding: _embedding, ...rest } = item;
+      return {
+        ...rest,
+        isBookmarked: bookmarkedIds.has(item.id),
+        coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
+      };
+    });
   }
 
   // Get feed items with optional filters + cursor pagination
@@ -232,7 +238,11 @@ export async function registerRoutes(
       if (mode === "semantic" && safeSearch && isEmbeddingsEnabled()) {
         const queryVec = await embedQuery(safeSearch);
         if (queryVec) {
-          const items = await storage.searchSemantic(queryVec, { limit: safeLimit });
+          const items = await storage.searchSemantic(queryVec, {
+            limit: safeLimit,
+            category: safeCategory,
+            source: safeSource,
+          });
           const decorated = await decorateItems(items);
           return res.json({ items: decorated, nextCursor: null });
         }

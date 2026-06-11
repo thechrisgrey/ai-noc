@@ -153,7 +153,7 @@ export interface IStorage {
   getItemsMissingEmbeddings(limit: number): Promise<FeedItem[]>;
   searchSemantic(
     queryVec: number[],
-    opts?: { limit?: number; sinceHours?: number },
+    opts?: { limit?: number; sinceHours?: number; category?: string; source?: string },
   ): Promise<FeedItem[]>;
   getRelatedItems(id: number, limit?: number): Promise<FeedItem[]>;
   updateClusterId(id: number, clusterId: string): Promise<void>;
@@ -427,18 +427,24 @@ export class DatabaseStorage implements IStorage {
 
   async searchSemantic(
     queryVec: number[],
-    opts: { limit?: number; sinceHours?: number } = {},
+    opts: { limit?: number; sinceHours?: number; category?: string; source?: string } = {},
   ): Promise<FeedItem[]> {
-    const { limit = 30, sinceHours } = opts;
+    const { limit = 30, sinceHours, category, source } = opts;
     const literal = toVectorLiteral(queryVec);
     const since =
       sinceHours !== undefined
         ? sql` AND published_at >= ${new Date(Date.now() - sinceHours * 60 * 60 * 1000).toISOString()}`
         : sql``;
+    // Equality filters mirror the lexical path so an active category/source
+    // chip constrains semantic results instead of being silently ignored.
+    const catFilter =
+      category && category !== "all" ? sql` AND category = ${category}` : sql``;
+    const srcFilter =
+      source && source !== "all" ? sql` AND source = ${source}` : sql``;
     const result = await this.db.execute(sql`
       SELECT *, embedding <=> ${literal}::vector AS distance
       FROM ${feedItems}
-      WHERE embedding IS NOT NULL${since}
+      WHERE embedding IS NOT NULL${since}${catFilter}${srcFilter}
       ORDER BY distance ASC
       LIMIT ${limit}
     `);
@@ -534,10 +540,14 @@ export class DatabaseStorage implements IStorage {
 
   async getClusterCounts(clusterIds: string[]): Promise<Map<string, number>> {
     if (clusterIds.length === 0) return new Map();
+    // Match clustering's 72h window (clusterRecentItems) so the "+N SOURCES"
+    // coverage badge agrees with getCoverageCount instead of counting stale
+    // members that retain a cluster_id past the window until pruned.
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
     const rows = await this.db
       .select({ clusterId: feedItems.clusterId, value: count() })
       .from(feedItems)
-      .where(inArray(feedItems.clusterId, clusterIds))
+      .where(and(inArray(feedItems.clusterId, clusterIds), gte(feedItems.publishedAt, cutoff)))
       .groupBy(feedItems.clusterId);
     return new Map(
       rows.map((r: { clusterId: string | null; value: number }) => [
@@ -550,10 +560,19 @@ export class DatabaseStorage implements IStorage {
   async getClusterSiblings(id: number): Promise<FeedItem[]> {
     const item = await this.getFeedItemById(id);
     if (!item?.clusterId) return [];
+    // Same 72h window as getClusterCounts so the expanded sibling list stays
+    // consistent with the coverage count shown on the card.
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
     return await this.db
       .select()
       .from(feedItems)
-      .where(and(eq(feedItems.clusterId, item.clusterId), ne(feedItems.id, id)))
+      .where(
+        and(
+          eq(feedItems.clusterId, item.clusterId),
+          ne(feedItems.id, id),
+          gte(feedItems.publishedAt, cutoff),
+        ),
+      )
       .orderBy(asc(feedItems.publishedAt));
   }
 

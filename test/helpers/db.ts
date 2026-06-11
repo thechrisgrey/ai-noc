@@ -7,23 +7,31 @@ import { DatabaseStorage } from "../../server/storage";
 const MIGRATIONS_DIR = path.resolve(__dirname, "..", "..", "migrations");
 
 /**
- * Create a fresh in-memory PGlite instance, apply the baseline migration,
- * and return a DatabaseStorage wired to it. Each call is isolated.
+ * Create a fresh in-memory PGlite instance, apply every migration in journal
+ * order, and return a DatabaseStorage wired to it. Each call is isolated.
  */
 export async function createTestStorage() {
   const client = new PGlite();
   await client.waitReady;
 
-  const sqlPath = path.join(MIGRATIONS_DIR, "0000_initial_schema.sql");
-  const migrationSql = readFileSync(sqlPath, "utf-8");
+  const journal = JSON.parse(
+    readFileSync(path.join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf-8"),
+  ) as { entries: { tag: string }[] };
 
-  const statements = migrationSql
-    .split("--> statement-breakpoint")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  for (const entry of journal.entries) {
+    const migrationSql = readFileSync(
+      path.join(MIGRATIONS_DIR, `${entry.tag}.sql`),
+      "utf-8",
+    );
 
-  for (const stmt of statements) {
-    await client.query(stmt);
+    const statements = migrationSql
+      .split("--> statement-breakpoint")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const stmt of statements) {
+      await client.query(stmt);
+    }
   }
 
   const db = drizzle(client);

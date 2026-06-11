@@ -2,7 +2,7 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { storage } from "./storage";
+import { storage, type IStorage } from "./storage";
 
 const BEDROCK_REGION = process.env.BEDROCK_REGION || "us-east-1";
 const MODEL_ID =
@@ -13,13 +13,22 @@ const bedrock = new BedrockRuntimeClient({ region: BEDROCK_REGION });
 
 const SYSTEM_PROMPT = `You are an AI industry intelligence analyst for a real-time monitoring system called AI OPS CENTER. Summarize the provided signals into a concise 3-5 sentence executive briefing. Be specific: name what shipped, who announced it, and why it matters. Use a terse, professional tone. No preamble, no sign-off, no bullet points — just flowing prose.`;
 
-export async function generateBriefing(): Promise<string | null> {
+export async function generateBriefing(store: IStorage = storage): Promise<string | null> {
   try {
-    // Get top items by priority from last 24 hours
-    const result = await storage.getFeedItems({
+    // Top items by priority from the last 24 hours; widen to 72 hours once
+    // before giving up so quiet news days still produce a briefing.
+    let result = await store.getFeedItems({
       limit: 10,
       sort: "priority",
+      sinceHours: 24,
     });
+    if (result.items.length < 3) {
+      result = await store.getFeedItems({
+        limit: 10,
+        sort: "priority",
+        sinceHours: 72,
+      });
+    }
 
     const items = result.items;
     if (items.length < 3) {
@@ -60,7 +69,7 @@ export async function generateBriefing(): Promise<string | null> {
     }
 
     // Cache in database
-    const briefing = await storage.createBriefing({
+    const briefing = await store.createBriefing({
       content: briefingText,
       itemCount: items.length,
       generatedAt: new Date().toISOString(),

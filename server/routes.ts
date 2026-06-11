@@ -1,7 +1,9 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { createServer, type IncomingMessage, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
+import { timingSafeEqualStr } from "./originVerify";
+import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
 import { fetchAllFeeds, seedDemoData } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
@@ -13,7 +15,16 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // WebSocket server for real-time push to connected clients
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    path: "/ws",
+    verifyClient: (info: { req: IncomingMessage }) => {
+      const token = process.env.ORIGIN_VERIFY_TOKEN;
+      if (!token) return true;
+      const header = info.req.headers["x-origin-verify"];
+      return typeof header === "string" && timingSafeEqualStr(header, token);
+    },
+  });
   const clients = new Set<WebSocket>();
 
   wss.on("connection", (ws) => {
@@ -46,7 +57,7 @@ export async function registerRoutes(
         broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
         const newItems = await storage.getItemsByIds(newItemIds);
         const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= 80)
+          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
           .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
         if (highPriority.length > 0) {
           broadcast({ type: "alert", items: highPriority });
@@ -70,7 +81,7 @@ export async function registerRoutes(
           broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
           const newItems = await storage.getItemsByIds(newItemIds);
           const highPriority = newItems
-            .filter((item) => (item.priority ?? 0) >= 80)
+            .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
             .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
           if (highPriority.length > 0) {
             broadcast({ type: "alert", items: highPriority });
@@ -158,7 +169,7 @@ export async function registerRoutes(
         broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
         const newItems = await storage.getItemsByIds(newItemIds);
         const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= 80)
+          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
           .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
         if (highPriority.length > 0) {
           broadcast({ type: "alert", items: highPriority });

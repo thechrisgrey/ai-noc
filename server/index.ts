@@ -3,10 +3,23 @@ import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { storage } from "./storage";
+import { originVerifyMiddleware } from "./originVerify";
 import { createServer } from "http";
+
+// Fail closed: the origin-verify header is the only control isolating the
+// origin, so a missing secret in production must abort startup rather than
+// silently disable the perimeter.
+if (process.env.NODE_ENV === "production" && !process.env.ORIGIN_VERIFY_TOKEN) {
+  throw new Error("ORIGIN_VERIFY_TOKEN must be set when NODE_ENV=production");
+}
 
 const app = express();
 const httpServer = createServer(app);
+
+// Behind ALB/CloudFront — trust the proxy chain so req.ip and rate
+// limiting key off the real client IP, not the load balancer's.
+const trustProxyHops = parseInt(process.env.TRUST_PROXY_HOPS || "1", 10);
+app.set("trust proxy", trustProxyHops);
 
 declare module "http" {
   interface IncomingMessage {
@@ -27,7 +40,7 @@ app.use(express.urlencoded({ extended: false }));
 // CORS — restricted to known origins
 const ALLOWED_ORIGINS = (
   process.env.CORS_ORIGINS ||
-  "https://main.d22gnzk10dja9z.amplifyapp.com,https://d289ng5gobnp4e.cloudfront.net,http://localhost:3456,http://localhost:5000"
+  "https://main.d22gnzk10dja9z.amplifyapp.com,https://d289ng5gobnp4e.cloudfront.net,https://noc.altivum.ai,http://localhost:3456,http://localhost:5000"
 ).split(",");
 
 app.use((req, res, next) => {
@@ -44,6 +57,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(originVerifyMiddleware(process.env.ORIGIN_VERIFY_TOKEN));
+
 // Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -51,6 +66,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later" },
+  skip: (req) => req.path === "/health" || req.path === "/api/health",
 });
 
 const refreshLimiter = rateLimit({

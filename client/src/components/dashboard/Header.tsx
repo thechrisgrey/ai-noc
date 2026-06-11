@@ -70,6 +70,7 @@ export function Header({
           </button>
           <button
             onClick={() => setShowBookmarks(!showBookmarks)}
+            aria-pressed={showBookmarks}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border transition-colors data-readout ${
               showBookmarks
                 ? "border-amber-400/30 text-amber-400 bg-amber-400/10"
@@ -90,6 +91,7 @@ export function Header({
                 setNotificationsEnabled(false);
               }
             }}
+            aria-pressed={notificationsEnabled}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border transition-colors data-readout ${
               notificationsEnabled
                 ? "border-primary/30 text-primary bg-primary/10"

@@ -7,11 +7,21 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as route53targets from "aws-cdk-lib/aws-route53-targets";
 import { Construct } from "constructs";
 
 export class AiNocStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    const cfPrefixListId = this.node.tryGetContext("cfPrefixListId") ?? "pl-3b927c52";
+    const imageTag = this.node.tryGetContext("imageTag") ?? "latest";
+    const domainName = this.node.tryGetContext("domainName");
+    const hostedZoneId = this.node.tryGetContext("hostedZoneId");
+    const httpsEnabled = Boolean(domainName && hostedZoneId);
+    const httpRedirect = httpsEnabled && this.node.tryGetContext("httpRedirect") === "true";
 
     // ─── VPC ───────────────────────────────────────────────
     const vpc = new ec2.Vpc(this, "Vpc", {
@@ -29,8 +39,10 @@ export class AiNocStack extends cdk.Stack {
       description: "ALB - accepts HTTP/HTTPS from internet",
       allowAllOutbound: true,
     });
-    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "HTTP");
-    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS");
+    albSg.addIngressRule(ec2.Peer.prefixList(cfPrefixListId), ec2.Port.tcp(80), "CloudFront origin-facing only");
+    if (httpsEnabled) {
+      albSg.addIngressRule(ec2.Peer.prefixList(cfPrefixListId), ec2.Port.tcp(443), "CloudFront origin-facing only");
+    }
 
     const fargateSg = new ec2.SecurityGroup(this, "FargateSg", {
       vpc,
@@ -70,9 +82,20 @@ export class AiNocStack extends cdk.Stack {
       allocatedStorage: 20,
       maxAllocatedStorage: 50,
       backupRetention: cdk.Duration.days(7),
-      deletionProtection: false,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      deleteAutomatedBackups: false,
+      deletionProtection: true,
+      removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       multiAz: false,
+    });
+
+    // Shared secret CloudFront attaches as the X-Origin-Verify header; the app
+    // rejects requests that reach the ALB without it.
+    const originVerifySecret = new secretsmanager.Secret(this, "OriginVerifySecret", {
+      secretName: "ai-noc/origin-verify",
+      generateSecretString: {
+        excludePunctuation: true,
+        passwordLength: 32,
+      },
     });
 
     // ─── ECR Repository ────────────────────────────────────
@@ -93,7 +116,7 @@ export class AiNocStack extends cdk.Stack {
     // Pass DB credentials as ECS secrets (injected at runtime from Secrets Manager).
     // The app constructs DATABASE_URL from individual components.
     const container = taskDef.addContainer("app", {
-      image: ecs.ContainerImage.fromEcrRepository(repo, "latest"),
+      image: ecs.ContainerImage.fromEcrRepository(repo, imageTag),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "ai-noc",
         logRetention: logs.RetentionDays.TWO_WEEKS,
@@ -106,10 +129,12 @@ export class AiNocStack extends cdk.Stack {
         DB_PORT: "5432",
         DB_NAME: "ainoc",
         BEDROCK_REGION: "us-east-1",
+        TRUST_PROXY_HOPS: "2",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(dbCredentials, "username"),
         DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, "password"),
+        ORIGIN_VERIFY_TOKEN: ecs.Secret.fromSecretsManager(originVerifySecret),
       },
       healthCheck: {
         command: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/health || exit 1"],
@@ -129,12 +154,13 @@ export class AiNocStack extends cdk.Stack {
       securityGroups: [fargateSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       assignPublicIp: false,
-      circuitBreaker: { enable: false },
+      circuitBreaker: { enable: true, rollback: true },
       healthCheckGracePeriod: cdk.Duration.seconds(120),
     });
 
-    // Grant Fargate task read access to the DB secret
+    // Grant Fargate task read access to the DB and origin-verify secrets
     dbCredentials.grantRead(taskDef.taskRole);
+    originVerifySecret.grantRead(taskDef.taskRole);
 
     // Grant Bedrock InvokeModel for AI briefing generation
     taskDef.addToTaskRolePolicy(
@@ -142,7 +168,7 @@ export class AiNocStack extends cdk.Stack {
         actions: ["bedrock:InvokeModel"],
         resources: [
           "arn:aws:bedrock:us-east-1::foundation-model/anthropic.*",
-          "arn:aws:bedrock:us-east-1:205930636302:inference-profile/us.anthropic.*",
+          `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.*`,
         ],
       }),
     );
@@ -154,13 +180,8 @@ export class AiNocStack extends cdk.Stack {
       securityGroup: albSg,
     });
 
-    // HTTP listener (add HTTPS + ACM certificate when domain is configured)
-    const listener = alb.addListener("HttpListener", {
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-    });
-
-    listener.addTargets("FargateTarget", {
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, "FargateTargetGroup", {
+      vpc,
       port: 5000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service],
@@ -172,6 +193,48 @@ export class AiNocStack extends cdk.Stack {
       },
       stickinessCookieDuration: cdk.Duration.hours(1),
     });
+
+    alb.addListener("HttpListener", {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
+      ...(httpRedirect
+        ? {
+            defaultAction: elbv2.ListenerAction.redirect({
+              protocol: "HTTPS",
+              port: "443",
+              permanent: true,
+            }),
+          }
+        : { defaultTargetGroups: [targetGroup] }),
+    });
+
+    // HTTPS listener + origin.<domain> alias, only once the delegated zone exists
+    if (httpsEnabled) {
+      const zone = route53.HostedZone.fromHostedZoneAttributes(this, "Zone", {
+        hostedZoneId,
+        zoneName: domainName,
+      });
+
+      const originCertificate = new acm.Certificate(this, "OriginCertificate", {
+        domainName: `origin.${domainName}`,
+        validation: acm.CertificateValidation.fromDns(zone),
+      });
+
+      alb.addListener("HttpsListener", {
+        port: 443,
+        protocol: elbv2.ApplicationProtocol.HTTPS,
+        open: false,
+        certificates: [originCertificate],
+        defaultTargetGroups: [targetGroup],
+      });
+
+      new route53.ARecord(this, "OriginAliasRecord", {
+        zone,
+        recordName: `origin.${domainName}`,
+        target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(alb)),
+      });
+    }
 
     // ─── Outputs ───────────────────────────────────────────
     new cdk.CfnOutput(this, "AlbDnsName", {

@@ -22,7 +22,7 @@ export function BreakingAlerts({ items }: { items: FeedItemWithBookmark[] }) {
               >
                 {item.sourceLabel}
               </span>
-              <span className="text-[9px] data-readout text-muted-foreground/30 ml-auto">
+              <span className="text-[9px] data-readout text-muted-foreground/60 ml-auto">
                 {timeAgo(item.publishedAt)}
               </span>
             </div>

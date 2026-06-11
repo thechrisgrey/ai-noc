@@ -9,11 +9,7 @@ const allowlist = [
   "drizzle-orm",
   "drizzle-zod",
   "express",
-  "express-session",
-  "memorystore",
   "nanoid",
-  "passport",
-  "passport-local",
   "rss-parser",
   "ws",
   "zod",
@@ -21,7 +17,7 @@ const allowlist = [
 ];
 
 // pg uses native bindings — must stay external
-const forceExternal = ["pg", "pg-native", "better-sqlite3"];
+const forceExternal = ["pg", "pg-native"];
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });

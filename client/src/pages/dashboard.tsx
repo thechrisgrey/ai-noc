@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useQuery, useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFeedWebSocket } from "@/hooks/use-feed-websocket";
@@ -58,11 +58,11 @@ export default function Dashboard() {
     const params = new URLSearchParams();
     if (selectedCategory !== "all") params.set("category", selectedCategory);
     if (selectedSource !== "all") params.set("source", selectedSource);
-    if (searchQuery) params.set("search", searchQuery);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (sortMode !== "time") params.set("sort", sortMode);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [selectedCategory, selectedSource, searchQuery, sortMode]);
+  }, [selectedCategory, selectedSource, debouncedSearch, sortMode]);
 
   useEffect(() => {
     localStorage.setItem("ai-noc-sort", sortMode);
@@ -93,6 +93,8 @@ export default function Dashboard() {
   const {
     data: feedData,
     isLoading,
+    isError,
+    refetch,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
@@ -111,15 +113,25 @@ export default function Dashboard() {
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     initialPageParam: undefined as string | undefined,
-    refetchInterval: 60000,
+    refetchInterval: (query) =>
+      (query.state.data?.pages.length ?? 0) <= 3 ? 60000 : false,
   });
 
-  const feedItems: FeedItemWithBookmark[] = useMemo(
-    () => feedData?.pages.flatMap((p) => p.items) ?? [],
-    [feedData],
-  );
+  // Priority recompute shifts keyset cursors between page fetches, so
+  // adjacent pages can briefly overlap; dedupe by id across the seam.
+  const feedItems: FeedItemWithBookmark[] = useMemo(() => {
+    const seen = new Set<number>();
+    const items: FeedItemWithBookmark[] = [];
+    for (const item of feedData?.pages.flatMap((p) => p.items) ?? []) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        items.push(item);
+      }
+    }
+    return items;
+  }, [feedData]);
 
-  const { data: stats } = useQuery<Stats>({
+  const { data: stats, isError: statsError } = useQuery<Stats>({
     queryKey: ["/api/stats"],
     refetchInterval: 30000,
   });
@@ -168,15 +180,42 @@ export default function Dashboard() {
       if (isBookmarked) {
         await apiRequest("DELETE", `/api/bookmarks/${feedItemId}`);
       } else {
-        await apiRequest("POST", "/api/bookmarks", { feedItemId });
+        try {
+          await apiRequest("POST", "/api/bookmarks", { feedItemId });
+        } catch (err) {
+          // 409 means the server already agrees with the optimistic state;
+          // rolling back would desync the feed cache from the server.
+          if (!(err instanceof Error && err.message.startsWith("409:"))) {
+            throw err;
+          }
+        }
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
+    onMutate: async ({ feedItemId }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/feed"] });
+      const snapshots = queryClient.getQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] });
+      queryClient.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] }, (data) => {
+        if (!data) return data;
+        return {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.id === feedItemId ? { ...item, isBookmarked: !item.isBookmarked } : item,
+            ),
+          })),
+        };
+      });
+      return { snapshots };
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      for (const [queryKey, data] of context?.snapshots ?? []) {
+        queryClient.setQueryData(queryKey, data);
+      }
       toast({ title: "BOOKMARK FAILED", description: "Could not save bookmark. Try again.", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
   });
 
@@ -308,10 +347,10 @@ export default function Dashboard() {
           {/* KPI Row */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-border/20 bg-card/10">
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
-              <KpiCard label="TOTAL SIGNALS" value={stats?.total || 0} icon={Radio} color="hsl(175,85%,50%)" />
-              <KpiCard label="HIGH PRIORITY" value={stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(0,70%,55%)" />
-              <KpiCard label="MODEL RELEASES" value={stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(175,85%,50%)" />
-              <KpiCard label="SOURCES ACTIVE" value={sourceCount} icon={Activity} color="hsl(140,60%,50%)" />
+              <KpiCard label="TOTAL SIGNALS" value={statsError ? "--" : stats?.total || 0} icon={Radio} color="hsl(175,85%,50%)" />
+              <KpiCard label="HIGH PRIORITY" value={statsError ? "--" : stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(0,70%,55%)" />
+              <KpiCard label="MODEL RELEASES" value={statsError ? "--" : stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(175,85%,50%)" />
+              <KpiCard label="SOURCES ACTIVE" value={statsError ? "--" : sourceCount} icon={Activity} color="hsl(140,60%,50%)" />
             </div>
           </div>
 
@@ -338,6 +377,8 @@ export default function Dashboard() {
           <FeedStream
             feedItems={feedItems}
             isLoading={isLoading}
+            isError={isError}
+            onRetry={refetch}
             showBookmarks={showBookmarks}
             sortMode={sortMode}
             groupedItems={groupedItems}

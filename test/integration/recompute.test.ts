@@ -44,6 +44,9 @@ vi.mock("../../server/storage", () => {
       async bulkUpdatePriorities(rows: typeof state.bulkPrioritiesCalls[number]) {
         state.bulkPrioritiesCalls.push(rows);
       },
+      async decayStalePriorities() {
+        return 0;
+      },
       async bulkUpdateClusterIds(rows: typeof state.bulkClusterCalls[number]) {
         state.bulkClusterCalls.push(rows);
       },

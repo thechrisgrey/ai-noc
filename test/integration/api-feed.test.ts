@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { createTestStorage } from "../helpers/db";
 import type { DatabaseStorage } from "../../server/storage";
+import type { FeedItem } from "@shared/schema";
 
 /**
  * Contract test for /api/feed. We build a minimal express app that replicates
@@ -118,5 +119,180 @@ describe("GET /api/feed", () => {
     expect(res.status).toBe(200);
     // should NOT filter to bogus — should return unfiltered set
     expect(res.body.items.length).toBeGreaterThan(0);
+  });
+});
+
+describe("priority pagination (composite keyset cursor)", () => {
+  let storage: DatabaseStorage;
+  const seededIds: number[] = [];
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const base = Date.parse("2026-06-01T00:00:00.000Z");
+    const hoursAfter = (n: number) => new Date(base + n * 60 * 60 * 1000).toISOString();
+    const sharedTs = hoursAfter(10);
+
+    // Adversarial shapes: ties on priority, ties on (priority, publishedAt)
+    // broken only by id, high priority on an old date, low priority on the
+    // newest date.
+    const shapes = [
+      { priority: 70, publishedAt: hoursAfter(1) },
+      { priority: 70, publishedAt: hoursAfter(2) },
+      { priority: 70, publishedAt: hoursAfter(3) },
+      { priority: 95, publishedAt: hoursAfter(-96) },
+      { priority: 10, publishedAt: hoursAfter(48) },
+      { priority: 50, publishedAt: sharedTs },
+      { priority: 50, publishedAt: sharedTs },
+      { priority: 50, publishedAt: sharedTs },
+      { priority: 0, publishedAt: hoursAfter(20) },
+      { priority: 100, publishedAt: hoursAfter(5) },
+      { priority: 85, publishedAt: hoursAfter(5) },
+      { priority: 85, publishedAt: hoursAfter(6) },
+    ];
+
+    const priorityRows: { id: number; priority: number; isBreaking: boolean }[] = [];
+    for (let i = 0; i < shapes.length; i++) {
+      const created = await storage.createFeedItem({
+        title: `Priority item ${i}`,
+        description: null,
+        url: null,
+        source: "openai",
+        sourceLabel: "OpenAI",
+        category: "product",
+        publishedAt: shapes[i].publishedAt,
+        fetchedAt: new Date().toISOString(),
+        guid: `prio-${i}`,
+        isBreaking: false,
+        imageUrl: null,
+      });
+      seededIds.push(created.id);
+      priorityRows.push({ id: created.id, priority: shapes[i].priority, isBreaking: false });
+    }
+    await storage.bulkUpdatePriorities(priorityRows);
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("pages through every item exactly once in (priority, publishedAt, id) order", async () => {
+    const collected: FeedItem[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await storage.getFeedItems({ sort: "priority", limit: 5, cursor });
+      collected.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+      pages++;
+    } while (cursor && pages < 10);
+
+    const ids = collected.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect([...ids].sort((a, b) => a - b)).toEqual([...seededIds].sort((a, b) => a - b));
+
+    for (let i = 1; i < collected.length; i++) {
+      const prev = collected[i - 1];
+      const curr = collected[i];
+      const nonIncreasing =
+        (prev.priority ?? 0) > (curr.priority ?? 0) ||
+        ((prev.priority ?? 0) === (curr.priority ?? 0) &&
+          (prev.publishedAt > curr.publishedAt ||
+            (prev.publishedAt === curr.publishedAt && prev.id > curr.id)));
+      expect(nonIncreasing).toBe(true);
+    }
+  });
+
+  it("ignores a malformed cursor instead of failing", async () => {
+    const page = await storage.getFeedItems({
+      sort: "priority",
+      limit: 5,
+      cursor: "garbage-cursor",
+    });
+    expect(page.items.length).toBe(5);
+  });
+});
+
+describe("time pagination (composite keyset cursor)", () => {
+  let storage: DatabaseStorage;
+  const seededIds: number[] = [];
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const base = Date.parse("2026-06-01T00:00:00.000Z");
+    const hoursAfter = (n: number) => new Date(base + n * 60 * 60 * 1000).toISOString();
+    const sharedTs = hoursAfter(10);
+
+    // Adversarial shapes: runs of identical publishedAt longer than the page
+    // size so a page boundary must cut between same-timestamp rows.
+    const timestamps = [
+      hoursAfter(1),
+      sharedTs,
+      sharedTs,
+      sharedTs,
+      sharedTs,
+      sharedTs,
+      sharedTs,
+      hoursAfter(20),
+      hoursAfter(20),
+      hoursAfter(48),
+    ];
+
+    for (let i = 0; i < timestamps.length; i++) {
+      const created = await storage.createFeedItem({
+        title: `Time item ${i}`,
+        description: null,
+        url: null,
+        source: "openai",
+        sourceLabel: "OpenAI",
+        category: "product",
+        publishedAt: timestamps[i],
+        fetchedAt: new Date().toISOString(),
+        guid: `time-${i}`,
+        isBreaking: false,
+        imageUrl: null,
+      });
+      seededIds.push(created.id);
+    }
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("pages through every item exactly once in (publishedAt, id) order", async () => {
+    const collected: FeedItem[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await storage.getFeedItems({ limit: 3, cursor });
+      collected.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+      pages++;
+    } while (cursor && pages < 10);
+
+    const ids = collected.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect([...ids].sort((a, b) => a - b)).toEqual([...seededIds].sort((a, b) => a - b));
+
+    for (let i = 1; i < collected.length; i++) {
+      const prev = collected[i - 1];
+      const curr = collected[i];
+      const nonIncreasing =
+        prev.publishedAt > curr.publishedAt ||
+        (prev.publishedAt === curr.publishedAt && prev.id > curr.id);
+      expect(nonIncreasing).toBe(true);
+    }
+  });
+
+  it("ignores a malformed cursor instead of failing", async () => {
+    const page = await storage.getFeedItems({
+      limit: 3,
+      cursor: "2026-06-01T10:00:00.000Z",
+    });
+    expect(page.items.length).toBe(3);
   });
 });

@@ -36,12 +36,26 @@ export async function runMigrations(migrationsFolder?: string): Promise<void> {
     ssl: isAws ? { rejectUnauthorized: false } : false,
   });
 
-  const db = drizzle(pool);
   const folder = migrationsFolder ?? resolveDefaultMigrationsFolder();
 
   try {
     console.log(`[Migrate] Applying migrations from ${folder}`);
-    await migrate(db, { migrationsFolder: folder });
+    // Advisory lock serializes concurrent migrators (e.g. two tasks starting
+    // during a rolling deploy); must run on a dedicated client so the lock is
+    // held by the same session that releases it.
+    const client = await pool.connect();
+    try {
+      await client.query("SELECT pg_advisory_lock(727274001)");
+      await migrate(drizzle(client), { migrationsFolder: folder });
+    } finally {
+      try {
+        await client.query("SELECT pg_advisory_unlock(727274001)");
+      } catch {
+        // Session-scoped lock dies with the connection; swallowing keeps the
+        // unlock failure from masking the migration error or leaking the client.
+      }
+      client.release();
+    }
     console.log("[Migrate] Migrations applied successfully");
   } finally {
     await pool.end();

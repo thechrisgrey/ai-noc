@@ -9,6 +9,8 @@ export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout>;
+    let disposed = false;
+    let attempt = 0;
 
     function connect() {
       try {
@@ -21,6 +23,10 @@ export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
           wsUrl = `${protocol}//${window.location.host}/ws`;
         }
         ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          attempt = 0;
+        };
 
         ws.onmessage = (event) => {
           try {
@@ -35,7 +41,8 @@ export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
         };
 
         ws.onclose = () => {
-          reconnectTimer = setTimeout(connect, 5000);
+          if (disposed) return;
+          reconnectTimer = setTimeout(connect, Math.min(5000 * 2 ** attempt++, 60000));
         };
 
         ws.onerror = () => {
@@ -49,8 +56,12 @@ export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
     connect();
 
     return () => {
+      disposed = true;
       clearTimeout(reconnectTimer);
-      try { ws?.close(); } catch {}
+      if (ws) {
+        ws.onclose = null;
+        try { ws.close(); } catch {}
+      }
     };
   }, []);
 }

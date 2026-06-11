@@ -7,6 +7,8 @@ import { getSourceMeta } from "./utils";
 interface FeedStreamProps {
   feedItems: FeedItemWithBookmark[];
   isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
   showBookmarks: boolean;
   sortMode: "time" | "priority";
   groupedItems: { label: string; items: FeedItemWithBookmark[] }[];
@@ -22,6 +24,8 @@ interface FeedStreamProps {
 export function FeedStream({
   feedItems,
   isLoading,
+  isError,
+  onRetry,
   showBookmarks,
   sortMode,
   groupedItems,
@@ -60,6 +64,7 @@ export function FeedStream({
                 {[...breakingItems, ...breakingItems].map((item, idx) => (
                   <span
                     key={`${item.id}-${idx}`}
+                    aria-hidden={idx >= breakingItems.length || undefined}
                     className="inline-flex items-center mr-8"
                   >
                     <span
@@ -97,6 +102,8 @@ export function FeedStream({
             bookmarksList={bookmarksList}
             onToggleBookmark={onToggleBookmark}
           />
+        ) : isError ? (
+          <ErrorState onRetry={onRetry} />
         ) : sortMode === "priority" ? (
           <PriorityList
             feedItems={feedItems}
@@ -178,6 +185,29 @@ function BookmarksView({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center px-10 py-8 rounded border border-red-500/25 bg-red-950/15 border-l-[3px] border-l-red-500">
+        <AlertTriangle size={28} className="mb-3 text-red-400/60" />
+        <p className="text-sm uppercase tracking-wider text-red-400/80 font-semibold data-readout">
+          SIGNAL LINK DOWN
+        </p>
+        <p className="text-xs mt-1 text-muted-foreground/60">
+          Feed unavailable -- check connection
+        </p>
+        <button
+          onClick={onRetry}
+          className="mt-4 flex items-center gap-1.5 text-[10px] px-3 py-1.5 rounded border border-primary/20 text-primary hover:bg-primary/10 data-readout transition-colors"
+        >
+          <RefreshCw size={10} />
+          RETRY
+        </button>
+      </div>
     </div>
   );
 }
@@ -267,7 +297,7 @@ function GroupedList({
               {group.label}
             </span>
             <div className="flex-1 h-px bg-border/15" />
-            <span className="text-[10px] text-muted-foreground/30 data-readout">
+            <span className="text-[10px] text-muted-foreground/60 data-readout">
               {group.items.length}
             </span>
           </div>

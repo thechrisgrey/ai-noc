@@ -7,3 +7,11 @@ dist
 .DS_Store
 infra
 docs
+.env
+.env.*
+*.db.backup
+*.zip
+test
+.github
+coverage
+README.md

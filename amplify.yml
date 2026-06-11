@@ -3,9 +3,10 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm install
+        - npm ci
     build:
       commands:
+        - npm run check
         - npx vite build
   artifacts:
     baseDirectory: dist/public

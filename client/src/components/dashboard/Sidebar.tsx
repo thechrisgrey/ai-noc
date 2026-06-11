@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X, Bell, BellOff } from "lucide-react";
 import { CATEGORIES, type Category, type Stats } from "./constants";
 import { getSourceMeta } from "./utils";
 import { SourcesSheet } from "./SourcesSheet";
@@ -12,6 +12,7 @@ interface SidebarProps {
   onSelectCategory: (cat: Category) => void;
   onSelectSource: (source: string) => void;
   onApplyWatchlist: (wl: any) => void;
+  onToggleWatchlistAlert: (id: number, alert: boolean) => void;
   onDeleteWatchlist: (id: number) => void;
 }
 
@@ -24,6 +25,7 @@ export function Sidebar({
   onSelectCategory,
   onSelectSource,
   onApplyWatchlist,
+  onToggleWatchlistAlert,
   onDeleteWatchlist,
 }: SidebarProps) {
   return (
@@ -115,26 +117,41 @@ export function Sidebar({
           <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mb-2 px-2 data-readout">
             WATCHLISTS
           </div>
-          {watchlistsData.map((wl: any) => (
-            <div
-              key={wl.id}
-              className="group flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] cursor-pointer transition-all"
-            >
-              <button
-                onClick={() => onApplyWatchlist(wl)}
-                className="flex-1 text-left truncate"
+          {watchlistsData.map((wl: any) => {
+            const alertOn = !!wl.alert;
+            return (
+              <div
+                key={wl.id}
+                className="group flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] cursor-pointer transition-all"
               >
-                {wl.name}
-              </button>
-              <button
-                onClick={() => onDeleteWatchlist(wl.id)}
-                aria-label={`Delete watchlist ${wl.name}`}
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-muted-foreground/60 hover:text-destructive transition-all"
-              >
-                <X size={10} />
-              </button>
-            </div>
-          ))}
+                <button
+                  onClick={() => onApplyWatchlist(wl)}
+                  className="flex-1 text-left truncate"
+                >
+                  {wl.name}
+                </button>
+                <button
+                  onClick={() => onToggleWatchlistAlert(wl.id, !alertOn)}
+                  aria-pressed={alertOn}
+                  aria-label={`Toggle alerts for ${wl.name}`}
+                  className={`transition-all focus-visible:opacity-100 focus:opacity-100 ${
+                    alertOn
+                      ? "text-primary hover:text-primary/80"
+                      : "opacity-0 group-hover:opacity-100 text-muted-foreground/60 hover:text-foreground"
+                  }`}
+                >
+                  {alertOn ? <Bell size={10} /> : <BellOff size={10} />}
+                </button>
+                <button
+                  onClick={() => onDeleteWatchlist(wl.id)}
+                  aria-label={`Delete watchlist ${wl.name}`}
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-muted-foreground/60 hover:text-destructive transition-all"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </nav>

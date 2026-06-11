@@ -5,7 +5,21 @@ import { recomputePriorities } from "./priority";
 import { recordSuccess, recordFailure } from "./feedHealth";
 import { buildDemoItems } from "./demoData";
 import { embedMany, isEmbeddingsEnabled } from "./embeddings";
+import { evaluateWatchlists, getWatchlistEmbeddings } from "./watchlistMatcher";
 import type { FeedItem, InsertFeedItem } from "@shared/schema";
+
+/** A watchlist alert: the watchlist that matched plus the items that hit it. */
+export interface WatchlistHit {
+  watchlistId: number;
+  name: string;
+  items: { id: number; title: string; sourceLabel: string }[];
+}
+
+export interface FetchResult {
+  newItemCount: number;
+  newItemIds: number[];
+  watchlistHits: WatchlistHit[];
+}
 
 // Cap the per-cycle self-healing backfill so a long NULL backlog never blocks
 // a fetch cycle; the dedicated backfill script drains the rest.
@@ -184,7 +198,48 @@ async function fetchFeed(source: FeedSource): Promise<InsertFeedItem[]> {
   }
 }
 
-export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemIds: number[] }> {
+/**
+ * Evaluate alert-enabled watchlists against the just-ingested items, stamping
+ * lastTriggeredAt on every watchlist that hit. Re-reads the items so semantic
+ * matching sees freshly persisted embeddings. Never throws — returns [] on any
+ * failure so a watchlist problem can't break the fetch cycle.
+ */
+async function evaluateWatchlistAlerts(newItemIds: number[]): Promise<WatchlistHit[]> {
+  if (newItemIds.length === 0) return [];
+  try {
+    const watchlists = (await storage.getWatchlists()).filter((wl) => wl.alert);
+    if (watchlists.length === 0) return [];
+
+    const items = await storage.getItemsByIds(newItemIds);
+    const embeddingsByWatchlistId = isEmbeddingsEnabled()
+      ? await getWatchlistEmbeddings(watchlists)
+      : new Map<number, number[]>();
+    const hitMap = evaluateWatchlists(items, watchlists, embeddingsByWatchlistId);
+
+    const stampedAt = new Date().toISOString();
+    const hits: WatchlistHit[] = [];
+    for (const wl of watchlists) {
+      const matched = hitMap.get(wl.id);
+      if (!matched || matched.length === 0) continue;
+      await storage.updateWatchlist(wl.id, { lastTriggeredAt: stampedAt });
+      hits.push({
+        watchlistId: wl.id,
+        name: wl.name,
+        items: matched.map((i) => ({
+          id: i.id,
+          title: i.title,
+          sourceLabel: i.sourceLabel,
+        })),
+      });
+    }
+    return hits;
+  } catch (err) {
+    console.error("[FeedEngine] Watchlist evaluation failed:", (err as Error).message);
+    return [];
+  }
+}
+
+export async function fetchAllFeeds(): Promise<FetchResult> {
   const enabledSources = await storage.getSources(true);
   const feedSources: FeedSource[] = enabledSources.map((s) => ({
     url: s.url,
@@ -245,7 +300,11 @@ export async function fetchAllFeeds(): Promise<{ newItemCount: number; newItemId
     console.error("[FeedEngine] Post-fetch processing failed:", (err as Error).message);
   }
 
-  return { newItemCount, newItemIds };
+  // Alert on watchlist hits against only the new items (after embeddings land
+  // so semantic watchlists can match on vectors).
+  const watchlistHits = await evaluateWatchlistAlerts(newItemIds);
+
+  return { newItemCount, newItemIds, watchlistHits };
 }
 
 /**

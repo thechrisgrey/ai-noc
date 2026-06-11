@@ -50,6 +50,10 @@ export const watchlists = pgTable("watchlists", {
   source: text("source"),
   search: text("search"),
   sort: text("sort"),
+  // When true, new ingested items matching this watchlist push a real-time
+  // alert; lastTriggeredAt stamps the most recent hit (canonical UTC ISO).
+  alert: boolean("alert").notNull().default(false),
+  lastTriggeredAt: text("last_triggered_at"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -58,6 +62,9 @@ export const briefings = pgTable("briefings", {
   content: text("content").notNull(),
   itemCount: integer("item_count").notNull(),
   generatedAt: text("generated_at").notNull(),
+  // 'hourly' (the rolling executive briefing) or 'daily_digest' (the once-a-day
+  // SES-delivered roundup). The archive UI filters on this.
+  kind: text("kind").notNull().default("hourly"),
 });
 
 // RSS/Atom feed sources. slug doubles as feed_items.source; deleting a source

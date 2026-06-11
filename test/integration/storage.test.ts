@@ -371,6 +371,110 @@ describe("cluster expansion", () => {
   });
 });
 
+describe("getBriefings kind filter + limit", () => {
+  let storage: DatabaseStorage;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const minutesAgo = (n: number) => new Date(Date.now() - n * 60 * 1000).toISOString();
+    // Interleave hourly and digest briefings with distinct generatedAt.
+    await storage.createBriefing({ content: "hourly-1", itemCount: 5, generatedAt: minutesAgo(50), kind: "hourly" });
+    await storage.createBriefing({ content: "digest-1", itemCount: 12, generatedAt: minutesAgo(40), kind: "daily_digest" });
+    await storage.createBriefing({ content: "hourly-2", itemCount: 6, generatedAt: minutesAgo(30), kind: "hourly" });
+    await storage.createBriefing({ content: "hourly-3", itemCount: 7, generatedAt: minutesAgo(20), kind: "hourly" });
+    await storage.createBriefing({ content: "digest-2", itemCount: 11, generatedAt: minutesAgo(10), kind: "daily_digest" });
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("returns all kinds newest-first when no kind filter is given", async () => {
+    const rows = await storage.getBriefings({});
+    expect(rows.map((b) => b.content)).toEqual([
+      "digest-2",
+      "hourly-3",
+      "hourly-2",
+      "digest-1",
+      "hourly-1",
+    ]);
+  });
+
+  it("filters to a single kind", async () => {
+    const digests = await storage.getBriefings({ kind: "daily_digest" });
+    expect(digests.map((b) => b.content)).toEqual(["digest-2", "digest-1"]);
+    expect(digests.every((b) => b.kind === "daily_digest")).toBe(true);
+  });
+
+  it("clamps the result to the requested limit", async () => {
+    const rows = await storage.getBriefings({ limit: 2 });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].content).toBe("digest-2");
+  });
+
+  it("getLatestBriefing(kind) returns the newest of that kind", async () => {
+    expect((await storage.getLatestBriefing("hourly"))?.content).toBe("hourly-3");
+    expect((await storage.getLatestBriefing("daily_digest"))?.content).toBe("digest-2");
+  });
+});
+
+describe("updateWatchlist patch", () => {
+  let storage: DatabaseStorage;
+  let id: number;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+    const wl = await storage.createWatchlist({
+      name: "GPU launches",
+      category: "infrastructure",
+      source: null,
+      search: "gpu",
+      sort: null,
+      createdAt: new Date().toISOString(),
+    });
+    id = wl.id;
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("defaults alert false and lastTriggeredAt null on create", async () => {
+    const [wl] = await storage.getWatchlists();
+    expect(wl.alert).toBe(false);
+    expect(wl.lastTriggeredAt).toBeNull();
+  });
+
+  it("toggles alert and stamps lastTriggeredAt independently", async () => {
+    const updated = await storage.updateWatchlist(id, { alert: true });
+    expect(updated?.alert).toBe(true);
+
+    const stamp = new Date().toISOString();
+    const stamped = await storage.updateWatchlist(id, { lastTriggeredAt: stamp });
+    expect(stamped?.lastTriggeredAt).toBe(stamp);
+    // Alert remained true — patch only touches supplied fields.
+    expect(stamped?.alert).toBe(true);
+  });
+
+  it("renames without disturbing other fields", async () => {
+    const renamed = await storage.updateWatchlist(id, { name: "GPU drops" });
+    expect(renamed?.name).toBe("GPU drops");
+    expect(renamed?.category).toBe("infrastructure");
+  });
+
+  it("an empty patch returns the unchanged row", async () => {
+    const before = await storage.updateWatchlist(id, {});
+    expect(before?.name).toBe("GPU drops");
+  });
+
+  it("returns undefined for a missing id", async () => {
+    expect(await storage.updateWatchlist(999999, { alert: true })).toBeUndefined();
+  });
+});
+
 describe("getFeedItems sinceHours", () => {
   let storage: DatabaseStorage;
 

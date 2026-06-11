@@ -3,6 +3,11 @@ import { useEffect } from "react";
 interface WebSocketCallbacks {
   onNewItems: (count: number) => void;
   onAlert: (items: { id: number; title: string; sourceLabel: string; priority: number }[]) => void;
+  onWatchlistHit: (hit: {
+    watchlistId: number;
+    name: string;
+    items: { id: number; title: string; sourceLabel: string }[];
+  }) => void;
 }
 
 export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
@@ -36,6 +41,13 @@ export function useFeedWebSocket(callbacks: WebSocketCallbacks) {
             }
             if (data.type === "alert" && Array.isArray(data.items)) {
               callbacks.onAlert(data.items);
+            }
+            if (data.type === "watchlist_hit" && Array.isArray(data.items)) {
+              callbacks.onWatchlistHit({
+                watchlistId: data.watchlistId,
+                name: data.name,
+                items: data.items,
+              });
             }
           } catch {}
         };

@@ -97,7 +97,23 @@ export default function Dashboard() {
         }
       }
     },
-  }), []);
+    onWatchlistHit: (hit: { watchlistId: number; name: string; items: { id: number; title: string; sourceLabel: string }[] }) => {
+      const first = hit.items[0];
+      const description = first?.title ?? `${hit.items.length} new signals`;
+      toast({ title: `WATCHLIST: ${hit.name}`, description });
+      if (notifications.isEnabled() && document.hidden && first) {
+        notifications.sendNotification(
+          `WATCHLIST: ${hit.name}`,
+          first.title,
+          () => {
+            window.focus();
+            queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+          },
+        );
+      }
+    },
+  }), [toast]);
   useFeedWebSocket(wsCallbacks);
 
   // ── Queries ──
@@ -300,6 +316,18 @@ export default function Dashboard() {
     },
   });
 
+  const toggleWatchlistAlertMutation = useMutation({
+    mutationFn: async ({ id, alert }: { id: number; alert: boolean }) => {
+      await apiRequest("PATCH", `/api/watchlists/${id}`, { alert });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+    },
+    onError: () => {
+      toast({ title: "ALERT TOGGLE FAILED", description: "Could not update watchlist alerts.", variant: "destructive" });
+    },
+  });
+
   // ── Derived ──
   const hasActiveFilters =
     selectedCategory !== "all" ||
@@ -442,6 +470,7 @@ export default function Dashboard() {
             onSelectCategory={handleSelectCategory}
             onSelectSource={handleSelectSource}
             onApplyWatchlist={handleApplyWatchlist}
+            onToggleWatchlistAlert={(id, alert) => toggleWatchlistAlertMutation.mutate({ id, alert })}
             onDeleteWatchlist={(id) => deleteWatchlistMutation.mutate(id)}
           />
 

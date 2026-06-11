@@ -4,9 +4,12 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { timingSafeEqualStr } from "./originVerify";
 import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
-import { fetchAllFeeds, probeFeedUrl, seedDemoData } from "./feedEngine";
+import { fetchAllFeeds, probeFeedUrl, seedDemoData, type FetchResult } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
+import { generateDailyDigest } from "./digest";
+import { deliverDigest } from "./deliver";
+import { clearWatchlistEmbeddingCache } from "./watchlistMatcher";
 import { validateSourceInput, SOURCE_CATEGORIES } from "./sourceValidation";
 import { embedText, isEmbeddingsEnabled } from "./embeddings";
 
@@ -69,6 +72,32 @@ export async function registerRoutes(
     });
   }
 
+  // Single place that turns a fetch result into the WebSocket fan-out: the
+  // new-items badge, high-priority alerts, and one message per watchlist hit.
+  // Shared by all three fetch sites (startup, interval, manual refresh).
+  async function broadcastFetchResults(result: FetchResult) {
+    const { newItemCount, newItemIds, watchlistHits } = result;
+    lastRefreshed = new Date().toISOString();
+    if (newItemCount > 0) {
+      broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
+      const newItems = await storage.getItemsByIds(newItemIds);
+      const highPriority = newItems
+        .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
+        .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
+      if (highPriority.length > 0) {
+        broadcast({ type: "alert", items: highPriority });
+      }
+    }
+    for (const hit of watchlistHits) {
+      broadcast({
+        type: "watchlist_hit",
+        watchlistId: hit.watchlistId,
+        name: hit.name,
+        items: hit.items,
+      });
+    }
+  }
+
   // Seed demo data on startup (non-blocking — DB may not be ready yet)
   try {
     await seedDemoData();
@@ -78,19 +107,7 @@ export async function registerRoutes(
 
   // Try fetching real feeds in background (don't block startup)
   fetchAllFeeds()
-    .then(async ({ newItemCount, newItemIds }) => {
-      lastRefreshed = new Date().toISOString();
-      if (newItemCount > 0) {
-        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-        const newItems = await storage.getItemsByIds(newItemIds);
-        const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-        if (highPriority.length > 0) {
-          broadcast({ type: "alert", items: highPriority });
-        }
-      }
-    })
+    .then((result) => broadcastFetchResults(result))
     .then(() => generateBriefing().catch(err => console.error("[Briefing] Initial generation failed:", err.message)))
     .catch(err => console.error("[Routes] Initial feed fetch failed:", err.message));
 
@@ -98,6 +115,46 @@ export async function registerRoutes(
   setInterval(() => {
     generateBriefing().catch(err => console.error("[Briefing] Hourly generation failed:", err.message));
   }, 60 * 60 * 1000);
+
+  // Daily digest: self-rescheduling timer that fires at the top of the
+  // DIGEST_HOUR_UTC hour, generates the digest, and delivers it. An empty
+  // DIGEST_HOUR_UTC disables the schedule entirely.
+  const digestHourRaw = process.env.DIGEST_HOUR_UTC ?? "12";
+  if (digestHourRaw.trim() !== "") {
+    const digestHour = parseInt(digestHourRaw, 10);
+    if (Number.isInteger(digestHour) && digestHour >= 0 && digestHour <= 23) {
+      const msUntilNextDigestHour = (): number => {
+        const now = new Date();
+        const next = new Date(now);
+        next.setUTCHours(digestHour, 0, 0, 0);
+        if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+        return next.getTime() - now.getTime();
+      };
+
+      const runDigest = async () => {
+        try {
+          // Guard against a restart double-fire: skip if the latest digest is
+          // less than 20h old.
+          const latest = await storage.getLatestBriefing("daily_digest");
+          const recentlyRan =
+            latest &&
+            Date.now() - new Date(latest.generatedAt).getTime() < 20 * 60 * 60 * 1000;
+          if (!recentlyRan) {
+            const content = await generateDailyDigest();
+            if (content) await deliverDigest(content);
+          }
+        } catch (err) {
+          console.error("[Digest] Scheduled run failed:", (err as Error).message);
+        } finally {
+          setTimeout(runDigest, msUntilNextDigestHour());
+        }
+      };
+
+      setTimeout(runDigest, msUntilNextDigestHour());
+    } else {
+      console.error(`[Digest] Invalid DIGEST_HOUR_UTC "${digestHourRaw}" — digest disabled`);
+    }
+  }
 
   // Retention pruning: delete unbookmarked items older than RETENTION_DAYS.
   // Disabled unless the env var parses to a positive integer.
@@ -115,19 +172,7 @@ export async function registerRoutes(
   // Poll feeds every 2 minutes for near-real-time coverage
   setInterval(() => {
     fetchAllFeeds()
-      .then(async ({ newItemCount, newItemIds }) => {
-        lastRefreshed = new Date().toISOString();
-        if (newItemCount > 0) {
-          broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-          const newItems = await storage.getItemsByIds(newItemIds);
-          const highPriority = newItems
-            .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-            .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-          if (highPriority.length > 0) {
-            broadcast({ type: "alert", items: highPriority });
-          }
-        }
-      })
+      .then((result) => broadcastFetchResults(result))
       .catch(err => console.error("[Routes] Periodic feed fetch failed:", err.message));
   }, 2 * 60 * 1000);
 
@@ -223,19 +268,9 @@ export async function registerRoutes(
   // Trigger manual feed refresh
   app.post("/api/feed/refresh", async (_req, res) => {
     try {
-      const { newItemCount, newItemIds } = await fetchAllFeeds();
-      lastRefreshed = new Date().toISOString();
-      if (newItemCount > 0) {
-        broadcast({ type: "new_items", count: newItemCount, timestamp: lastRefreshed });
-        const newItems = await storage.getItemsByIds(newItemIds);
-        const highPriority = newItems
-          .filter((item) => (item.priority ?? 0) >= PRIORITY_ALERT_THRESHOLD)
-          .map((item) => ({ id: item.id, title: item.title, sourceLabel: item.sourceLabel, priority: item.priority }));
-        if (highPriority.length > 0) {
-          broadcast({ type: "alert", items: highPriority });
-        }
-      }
-      res.json({ newItems: newItemCount, lastRefreshed });
+      const result = await fetchAllFeeds();
+      await broadcastFetchResults(result);
+      res.json({ newItems: result.newItemCount, lastRefreshed });
     } catch (err) {
       res.status(500).json({ error: "Failed to refresh feeds" });
     }
@@ -424,7 +459,7 @@ export async function registerRoutes(
   // Briefing
   app.get("/api/briefing", async (_req, res) => {
     try {
-      const briefing = await storage.getLatestBriefing();
+      const briefing = await storage.getLatestBriefing("hourly");
       res.json(briefing || { content: null, generatedAt: null, itemCount: 0 });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch briefing" });
@@ -435,13 +470,27 @@ export async function registerRoutes(
     try {
       const content = await generateBriefing();
       if (content) {
-        const briefing = await storage.getLatestBriefing();
+        const briefing = await storage.getLatestBriefing("hourly");
         res.json(briefing);
       } else {
         res.status(503).json({ error: "Could not generate briefing" });
       }
     } catch (err) {
       res.status(500).json({ error: "Failed to regenerate briefing" });
+    }
+  });
+
+  // Briefing archive: filter by kind (hourly | daily_digest), clamp the limit.
+  app.get("/api/briefings", async (req, res) => {
+    try {
+      const validKinds = ["hourly", "daily_digest"];
+      const { kind, limit } = req.query;
+      const safeKind = validKinds.includes(kind as string) ? (kind as string) : undefined;
+      const safeLimit = Math.max(1, Math.min(parseInt(limit as string) || 20, 50));
+      const rows = await storage.getBriefings({ kind: safeKind, limit: safeLimit });
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch briefings" });
     }
   });
 
@@ -469,9 +518,37 @@ export async function registerRoutes(
         sort: sort || null,
         createdAt: new Date().toISOString(),
       });
+      clearWatchlistEmbeddingCache();
       res.json(wl);
     } catch (err) {
       res.status(500).json({ error: "Failed to create watchlist" });
+    }
+  });
+
+  app.patch("/api/watchlists/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const { alert, name } = req.body ?? {};
+      if (alert !== undefined && typeof alert !== "boolean") {
+        return res.status(400).json({ error: "alert must be a boolean" });
+      }
+      if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+        return res.status(400).json({ error: "name must be a non-empty string" });
+      }
+      const updated = await storage.updateWatchlist(id, {
+        alert,
+        name: typeof name === "string" ? name.trim() : undefined,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "Watchlist not found" });
+      }
+      clearWatchlistEmbeddingCache();
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update watchlist" });
     }
   });
 
@@ -479,6 +556,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.deleteWatchlist(id);
+      clearWatchlistEmbeddingCache();
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete watchlist" });

@@ -162,8 +162,13 @@ export interface IStorage {
   getSourceActivity(days: number): Promise<Record<string, number[]>>;
   getWatchlists(): Promise<Watchlist[]>;
   createWatchlist(w: InsertWatchlist): Promise<Watchlist>;
+  updateWatchlist(
+    id: number,
+    patch: { alert?: boolean; name?: string; lastTriggeredAt?: string },
+  ): Promise<Watchlist | undefined>;
   deleteWatchlist(id: number): Promise<void>;
-  getLatestBriefing(): Promise<Briefing | undefined>;
+  getLatestBriefing(kind?: string): Promise<Briefing | undefined>;
+  getBriefings(opts: { kind?: string; limit?: number }): Promise<Briefing[]>;
   createBriefing(b: InsertBriefing): Promise<Briefing>;
   getSources(enabledOnly?: boolean): Promise<Source[]>;
   createSource(s: InsertSource): Promise<Source>;
@@ -613,17 +618,38 @@ export class DatabaseStorage implements IStorage {
     return rows[0];
   }
 
+  async updateWatchlist(
+    id: number,
+    patch: { alert?: boolean; name?: string; lastTriggeredAt?: string },
+  ): Promise<Watchlist | undefined> {
+    const set: Partial<InsertWatchlist> = {};
+    if (patch.alert !== undefined) set.alert = patch.alert;
+    if (patch.name !== undefined) set.name = patch.name;
+    if (patch.lastTriggeredAt !== undefined) set.lastTriggeredAt = patch.lastTriggeredAt;
+    if (Object.keys(set).length === 0) {
+      const rows = await this.db.select().from(watchlists).where(eq(watchlists.id, id)).limit(1);
+      return rows[0];
+    }
+    const rows = await this.db.update(watchlists).set(set).where(eq(watchlists.id, id)).returning();
+    return rows[0];
+  }
+
   async deleteWatchlist(id: number): Promise<void> {
     await this.db.delete(watchlists).where(eq(watchlists.id, id));
   }
 
-  async getLatestBriefing(): Promise<Briefing | undefined> {
-    const rows = await this.db
-      .select()
-      .from(briefings)
-      .orderBy(desc(briefings.generatedAt))
-      .limit(1);
+  async getLatestBriefing(kind?: string): Promise<Briefing | undefined> {
+    const base = this.db.select().from(briefings);
+    const query = kind ? base.where(eq(briefings.kind, kind)) : base;
+    const rows = await query.orderBy(desc(briefings.generatedAt)).limit(1);
     return rows[0];
+  }
+
+  async getBriefings(opts: { kind?: string; limit?: number } = {}): Promise<Briefing[]> {
+    const { kind, limit = 20 } = opts;
+    const base = this.db.select().from(briefings);
+    const query = kind ? base.where(eq(briefings.kind, kind)) : base;
+    return await query.orderBy(desc(briefings.generatedAt)).limit(limit);
   }
 
   async createBriefing(b: InsertBriefing): Promise<Briefing> {

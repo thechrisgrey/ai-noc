@@ -22,6 +22,7 @@ export class AiNocStack extends cdk.Stack {
     const hostedZoneId = this.node.tryGetContext("hostedZoneId");
     const httpsEnabled = Boolean(domainName && hostedZoneId);
     const httpRedirect = httpsEnabled && this.node.tryGetContext("httpRedirect") === "true";
+    const sesRegion = this.node.tryGetContext("sesRegion") ?? "us-east-1";
 
     // ─── VPC ───────────────────────────────────────────────
     const vpc = new ec2.Vpc(this, "Vpc", {
@@ -133,6 +134,8 @@ export class AiNocStack extends cdk.Stack {
         RETENTION_DAYS: "90",
         EMBEDDINGS_ENABLED: "true",
         CLUSTER_SIM_THRESHOLD: "0.80",
+        DIGEST_EMAIL_TO: "christian.perez@altivum.io",
+        DIGEST_HOUR_UTC: "12",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(dbCredentials, "username"),
@@ -174,6 +177,16 @@ export class AiNocStack extends cdk.Stack {
           `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.*`,
           "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
         ],
+      }),
+    );
+
+    // Grant SES SendEmail for the daily digest, scoped to verified identities in
+    // the SES region. SES authorizes on the verified From identity, so the
+    // resource is identity-scoped rather than wildcard-everything.
+    taskDef.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${sesRegion}:${this.account}:identity/*`],
       }),
     );
 

@@ -125,13 +125,28 @@ interface FeedEntry {
   enclosure?: { url?: string };
 }
 
+/** Some feeds (notably GitHub release atom) carry raw HTML in content/summary. */
+function stripHtml(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeEntry(
   entry: FeedEntry,
   source: Pick<FeedSource, "source" | "sourceLabel" | "defaultCategory">,
   nowISO: string,
 ): InsertFeedItem | null {
-  const title = entry.title || "Untitled";
-  const description = entry.contentSnippet || entry.content || entry.summary || null;
+  const title = stripHtml(entry.title || "") || "Untitled";
+  const rawDescription = entry.contentSnippet || entry.content || entry.summary || null;
+  const description = rawDescription ? stripHtml(rawDescription) || null : null;
   const truncatedDesc = description ? description.substring(0, 500) : null;
   const ts = Date.parse(entry.pubDate || entry.isoDate || "");
   const publishedAt = Number.isNaN(ts) ? nowISO : new Date(ts).toISOString();

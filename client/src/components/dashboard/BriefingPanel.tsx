@@ -40,15 +40,15 @@ export function BriefingPanel() {
   if (!briefing?.content && !regenerateMutation.isPending) return null;
 
   return (
-    <div className="flex-shrink-0 border-b border-primary/15 bg-primary/[0.03]">
-      <div className="w-full flex items-center gap-1 pr-4">
+    <div className="flex-shrink-0 bg-primary/[0.04] border-b border-b-white/[0.06] border-l-2 border-l-primary/40">
+      <div className="w-full flex items-center gap-2 pr-3">
         <button
           onClick={() => setCollapsed(!collapsed)}
           aria-expanded={!collapsed}
-          className="flex-1 flex items-center gap-2 pl-4 py-2 text-left"
+          className="flex-1 flex items-center gap-2 pl-4 py-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <Activity size={12} className="text-primary/60" />
-          <span className="text-[10px] uppercase tracking-wider text-primary/60 data-readout font-medium">
+          <Activity size={12} className="text-primary/90" />
+          <span className="text-[10px] uppercase tracking-[0.14em] text-primary/90 data-readout font-medium">
             INTELLIGENCE BRIEFING
           </span>
           {briefing?.generatedAt && (
@@ -58,16 +58,16 @@ export function BriefingPanel() {
           )}
           <span className="ml-auto">
             {collapsed ? (
-              <ChevronDown size={12} className="text-muted-foreground/30" />
+              <ChevronDown size={12} className="text-muted-foreground/60" />
             ) : (
-              <ChevronUp size={12} className="text-muted-foreground/30" />
+              <ChevronUp size={12} className="text-muted-foreground/60" />
             )}
           </span>
         </button>
         <button
           onClick={() => regenerateMutation.mutate()}
           disabled={regenerateMutation.isPending}
-          className={`text-[9px] px-1.5 py-0.5 rounded text-primary/40 hover:text-primary hover:bg-primary/10 data-readout transition-colors cursor-pointer ${
+          className={`flex-shrink-0 text-[9px] tracking-[0.14em] px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-foreground/80 hover:bg-white/[0.07] hover:text-foreground data-readout transition-colors cursor-pointer disabled:cursor-default focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
             regenerateMutation.isPending ? "animate-pulse" : ""
           }`}
         >
@@ -76,13 +76,11 @@ export function BriefingPanel() {
       </div>
       {!collapsed && (
         <div className="px-4 pb-3">
-          <div className="border-l-[3px] border-primary/20 pl-4 py-1">
-            <p className="text-[12px] font-mono text-foreground/75 leading-relaxed">
-              {regenerateMutation.isPending
-                ? "Analyzing top signals..."
-                : briefing?.content || "Briefing will be generated shortly..."}
-            </p>
-          </div>
+          <p className="text-[13px] font-sans text-foreground/85 leading-relaxed max-w-3xl">
+            {regenerateMutation.isPending
+              ? "Analyzing top signals..."
+              : briefing?.content || "Briefing will be generated shortly..."}
+          </p>
         </div>
       )}
     </div>

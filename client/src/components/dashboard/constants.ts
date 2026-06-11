@@ -32,22 +32,22 @@ export const CATEGORIES: {
   icon: any;
   color: string;
 }[] = [
-  { value: "all", label: "ALL FEEDS", shortLabel: "ALL", icon: Radio, color: "hsl(175,85%,50%)" },
-  { value: "model_release", label: "MODEL RELEASES", shortLabel: "MODELS", icon: Brain, color: "hsl(175,85%,50%)" },
-  { value: "research", label: "RESEARCH", shortLabel: "RESEARCH", icon: Activity, color: "hsl(280,70%,65%)" },
-  { value: "product", label: "PRODUCTS", shortLabel: "PRODUCTS", icon: Package, color: "hsl(200,80%,55%)" },
-  { value: "infrastructure", label: "INFRASTRUCTURE", shortLabel: "INFRA", icon: Cpu, color: "hsl(140,60%,50%)" },
-  { value: "funding", label: "FUNDING", shortLabel: "FUNDING", icon: DollarSign, color: "hsl(45,90%,60%)" },
-  { value: "policy", label: "POLICY", shortLabel: "POLICY", icon: Shield, color: "hsl(0,70%,60%)" },
+  { value: "all", label: "ALL FEEDS", shortLabel: "ALL", icon: Radio, color: "hsl(68, 95%, 60%)" },
+  { value: "model_release", label: "MODEL RELEASES", shortLabel: "MODELS", icon: Brain, color: "hsl(68, 95%, 60%)" },
+  { value: "research", label: "RESEARCH", shortLabel: "RESEARCH", icon: Activity, color: "hsl(270, 65%, 70%)" },
+  { value: "product", label: "PRODUCTS", shortLabel: "PRODUCTS", icon: Package, color: "hsl(200, 85%, 62%)" },
+  { value: "infrastructure", label: "INFRASTRUCTURE", shortLabel: "INFRA", icon: Cpu, color: "hsl(150, 60%, 55%)" },
+  { value: "funding", label: "FUNDING", shortLabel: "FUNDING", icon: DollarSign, color: "hsl(38, 95%, 60%)" },
+  { value: "policy", label: "POLICY", shortLabel: "POLICY", icon: Shield, color: "hsl(5, 80%, 62%)" },
 ];
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  model_release: "hsl(175,85%,50%)",
-  research: "hsl(280,70%,65%)",
-  funding: "hsl(45,90%,60%)",
-  product: "hsl(200,80%,55%)",
-  policy: "hsl(0,70%,60%)",
-  infrastructure: "hsl(140,60%,50%)",
+  model_release: "hsl(68, 95%, 60%)",
+  research: "hsl(270, 65%, 70%)",
+  funding: "hsl(38, 95%, 60%)",
+  product: "hsl(200, 85%, 62%)",
+  policy: "hsl(5, 80%, 62%)",
+  infrastructure: "hsl(150, 60%, 55%)",
 };
 
 export const SOURCE_META: Record<string, { icon: any; color: string; label: string }> = {
@@ -61,7 +61,7 @@ export const SOURCE_META: Record<string, { icon: any; color: string; label: stri
   stability: { icon: Brain, color: "#a855f7", label: "Stability" },
   cohere: { icon: Brain, color: "#39ffc7", label: "Cohere" },
   huggingface: { icon: Brain, color: "#ffd21e", label: "HuggingFace" },
-  community: { icon: Radio, color: "#00c8b4", label: "Community" },
+  community: { icon: Radio, color: "hsl(68, 95%, 60%)", label: "Community" },
   arxiv_ai: { icon: Activity, color: "#b31b1b", label: "arXiv AI" },
   arxiv_ml: { icon: Activity, color: "#b31b1b", label: "arXiv ML" },
   arxiv_nlp: { icon: Activity, color: "#b31b1b", label: "arXiv NLP" },

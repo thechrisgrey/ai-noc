@@ -24,17 +24,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.hasError) {
       return (
         <div className="h-screen flex items-center justify-center scanlines grid-bg">
-          <div className="flex flex-col items-center px-10 py-8 rounded border border-red-500/25 bg-red-950/15 border-l-[3px] border-l-red-500">
-            <AlertTriangle size={28} className="mb-3 text-red-400/60" />
-            <p className="text-sm uppercase tracking-wider text-red-400/80 font-semibold data-readout">
+          <div className="flex flex-col items-center px-10 py-8 rounded-2xl bg-card border border-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_12px_40px_rgba(0,0,0,0.5)]">
+            <AlertTriangle size={28} className="mb-3 text-destructive" />
+            <p className="text-sm uppercase tracking-[0.14em] text-destructive font-semibold data-readout">
               SYSTEM FAULT
             </p>
-            <p className="text-xs mt-1 text-muted-foreground/60">
+            <p className="text-xs mt-1.5 text-muted-foreground">
               Console encountered an unrecoverable error
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 flex items-center gap-1.5 text-[10px] px-3 py-1.5 rounded border border-primary/20 text-primary hover:bg-primary/10 data-readout transition-colors"
+              className="mt-5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] font-medium px-4 py-2 rounded-lg bg-primary text-primary-foreground shadow-[0_0_16px_hsla(68,96%,58%,0.25)] hover:brightness-110 data-readout transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               RELOAD CONSOLE
             </button>

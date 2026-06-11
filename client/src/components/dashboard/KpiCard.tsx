@@ -10,20 +10,21 @@ export function KpiCard({
   color: string;
 }) {
   return (
-    <div className="relative px-4 py-3 rounded border border-border/40 bg-card/30 overflow-hidden">
-      <div
-        className="absolute bottom-0 left-0 right-0 h-[2px]"
-        style={{ backgroundColor: color, opacity: 0.5 }}
-      />
+    <div className="rounded-2xl border border-white/[0.06] bg-card px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_4px_16px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-3">
-        <div style={{ color }} className="opacity-60">
-          <Icon size={18} />
+        <div
+          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{
+            backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+          }}
+        >
+          <Icon size={15} className="opacity-90" style={{ color }} />
         </div>
-        <div>
-          <div className="data-readout text-lg font-semibold text-foreground">
+        <div className="min-w-0">
+          <div className="font-mono tabular-nums text-2xl font-semibold leading-tight text-foreground">
             {value}
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[10px] uppercase tracking-[0.14em] font-medium text-muted-foreground mt-0.5">
             {label}
           </div>
         </div>

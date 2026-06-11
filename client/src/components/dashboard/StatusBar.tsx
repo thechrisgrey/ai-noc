@@ -9,14 +9,14 @@ export function StatusBar({ lastSynced }: { lastSynced?: string }) {
   }, []);
 
   return (
-    <div className="hidden md:flex items-center gap-3 text-xs data-readout text-muted-foreground">
+    <div className="hidden md:flex items-center gap-3 text-xs data-readout tabular-nums text-muted-foreground">
       <span className="flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-400 status-pulse" />
-        <span className="text-green-400">ONLINE</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-primary status-pulse" />
+        <span className="text-primary text-[10px] tracking-[0.14em] font-medium">ONLINE</span>
       </span>
-      <span className="text-border">|</span>
+      <span className="h-3 w-px bg-white/[0.08]" aria-hidden="true" />
       <span>{time.toLocaleTimeString("en-US", { hour12: false })}</span>
-      <span className="text-border">|</span>
+      <span className="h-3 w-px bg-white/[0.08]" aria-hidden="true" />
       <span>
         UTC
         {time.getTimezoneOffset() > 0 ? "-" : "+"}
@@ -24,8 +24,8 @@ export function StatusBar({ lastSynced }: { lastSynced?: string }) {
       </span>
       {lastSynced && (
         <>
-          <span className="text-border">|</span>
-          <span className="text-muted-foreground/50">
+          <span className="h-3 w-px bg-white/[0.08]" aria-hidden="true" />
+          <span className="text-muted-foreground/60">
             SYNCED {timeAgo(lastSynced)}
           </span>
         </>

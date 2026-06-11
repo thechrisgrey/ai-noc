@@ -27,20 +27,24 @@ export function FeedHealthBanner() {
       <button
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
-        className="w-full flex items-center gap-2 text-[10px] uppercase tracking-wider data-readout"
+        className="w-full flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] font-medium data-readout rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <span
-          className={`w-2 h-2 rounded-full ${summary.failing > 0 ? "bg-amber-400" : "bg-green-400"}`}
+          className={`w-2 h-2 rounded-full ${
+            summary.failing > 0
+              ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]"
+              : "bg-primary shadow-[0_0_6px_hsla(68,96%,58%,0.5)]"
+          }`}
         />
-        <span className="text-muted-foreground/70">
+        <span className="text-muted-foreground">
           {summary.online}/{summary.total} SOURCES ONLINE
         </span>
         {summary.failing > 0 && (
-          <span className="text-red-400 font-semibold ml-1">
+          <span className="text-amber-400 font-semibold ml-1">
             {summary.failing} FAILING
           </span>
         )}
-        <span className="ml-auto text-muted-foreground/30">
+        <span className="ml-auto text-muted-foreground/60">
           {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
         </span>
       </button>
@@ -49,19 +53,19 @@ export function FeedHealthBanner() {
           {failingEntries.map((h: any) => (
             <div
               key={h.source}
-              className="text-[9px] px-2 py-1.5 rounded bg-red-950/20 border border-red-500/15"
+              className="text-[9px] px-2.5 py-2 rounded-lg bg-amber-500/[0.06] border border-amber-500/15"
             >
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                <span className="text-red-400/80 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="text-amber-400/90 font-medium">
                   {getSourceMeta(h.source).label}
                 </span>
-                <span className="ml-auto text-muted-foreground/30">
+                <span className="ml-auto text-muted-foreground/60 data-readout">
                   {h.consecutiveFailures}x
                 </span>
               </div>
               {h.lastError && (
-                <p className="text-muted-foreground/40 mt-0.5 truncate">
+                <p className="text-muted-foreground/60 mt-1 truncate">
                   {h.lastError}
                 </p>
               )}

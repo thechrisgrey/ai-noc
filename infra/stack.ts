@@ -130,6 +130,7 @@ export class AiNocStack extends cdk.Stack {
         DB_NAME: "ainoc",
         BEDROCK_REGION: "us-east-1",
         TRUST_PROXY_HOPS: "2",
+        RETENTION_DAYS: "90",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(dbCredentials, "username"),

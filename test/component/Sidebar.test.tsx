@@ -10,6 +10,7 @@ const stats: Stats = {
   byCategory: { model_release: 4 },
   bySource: { openai: 6, anthropic: 4 },
   breakingCount: 1,
+  unreadCount: 3,
 };
 
 function renderSidebar(onDeleteWatchlist: (id: number) => void = () => {}) {

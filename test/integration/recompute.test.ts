@@ -19,6 +19,7 @@ function makeItem(id: number, overrides: MakeItemOverrides = {}): FeedItem {
     imageUrl: null,
     clusterId: null,
     priority: 0,
+    readAt: null,
     ...overrides,
   };
 }

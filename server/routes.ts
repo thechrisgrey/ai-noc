@@ -72,6 +72,19 @@ export async function registerRoutes(
     generateBriefing().catch(err => console.error("[Briefing] Hourly generation failed:", err.message));
   }, 60 * 60 * 1000);
 
+  // Retention pruning: delete unbookmarked items older than RETENTION_DAYS.
+  // Disabled unless the env var parses to a positive integer.
+  const retentionDays = parseInt(process.env.RETENTION_DAYS || "", 10);
+  if (retentionDays > 0) {
+    const prune = () =>
+      storage
+        .pruneOldItems(retentionDays)
+        .then((pruned) => console.log(`[Retention] Pruned ${pruned} items older than ${retentionDays} days`))
+        .catch((err) => console.error("[Retention] Prune failed:", err.message));
+    setTimeout(prune, 5 * 60 * 1000);
+    setInterval(prune, 24 * 60 * 60 * 1000);
+  }
+
   // Poll feeds every 2 minutes for near-real-time coverage
   setInterval(() => {
     fetchAllFeeds()
@@ -139,9 +152,14 @@ export async function registerRoutes(
       const bookmarkedIds = await storage.getBookmarkedIds(
         result.items.map((i) => i.id),
       );
+      const clusterIds = Array.from(
+        new Set(result.items.map((i) => i.clusterId).filter((c): c is string => !!c)),
+      );
+      const clusterCounts = await storage.getClusterCounts(clusterIds);
       const itemsWithBookmarks = result.items.map((item) => ({
         ...item,
         isBookmarked: bookmarkedIds.has(item.id),
+        coverageCount: item.clusterId ? clusterCounts.get(item.clusterId) ?? 1 : 1,
       }));
 
       res.json({ items: itemsWithBookmarks, nextCursor: result.nextCursor });
@@ -178,6 +196,53 @@ export async function registerRoutes(
       res.json({ newItems: newItemCount, lastRefreshed });
     } catch (err) {
       res.status(500).json({ error: "Failed to refresh feeds" });
+    }
+  });
+
+  // Mark specific items as read
+  app.post("/api/items/read", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (
+        !Array.isArray(ids) ||
+        ids.length < 1 ||
+        ids.length > 200 ||
+        !ids.every((id) => Number.isInteger(id))
+      ) {
+        return res.status(400).json({ error: "ids must be an array of 1-200 integers" });
+      }
+      await storage.markRead(ids);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to mark items read" });
+    }
+  });
+
+  // Mark everything published at or before a timestamp as read
+  app.post("/api/feed/read-all", async (req, res) => {
+    try {
+      const { before } = req.body;
+      if (typeof before !== "string" || Number.isNaN(Date.parse(before))) {
+        return res.status(400).json({ error: "before must be a parseable ISO date string" });
+      }
+      await storage.markAllRead(before);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to mark all read" });
+    }
+  });
+
+  // Cluster siblings for a feed item (other sources covering the same story)
+  app.get("/api/items/:id/cluster", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "id must be an integer" });
+      }
+      const siblings = await storage.getClusterSiblings(id);
+      res.json(siblings);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch cluster siblings" });
     }
   });
 

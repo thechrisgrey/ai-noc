@@ -1,4 +1,4 @@
-import { Search, X, ArrowUpDown, Bookmark, Filter } from "lucide-react";
+import { Search, X, ArrowUpDown, Bookmark, Filter, CheckCheck } from "lucide-react";
 import { CATEGORIES, type Category, type Stats } from "./constants";
 import { getSourceMeta } from "./utils";
 
@@ -17,6 +17,7 @@ interface FeedToolbarProps {
   watchlistName: string;
   setWatchlistName: (v: string) => void;
   onSaveWatchlist: () => void;
+  onMarkAllRead: () => void;
   feedItemCount: number;
   // Mobile category bar
   stats?: Stats;
@@ -36,7 +37,9 @@ export function FeedToolbar({
   watchlistName,
   setWatchlistName,
   onSaveWatchlist,
+  onMarkAllRead,
   feedItemCount,
+  stats,
 }: FeedToolbarProps) {
   return (
     <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-3">
@@ -85,6 +88,15 @@ export function FeedToolbar({
           <ArrowUpDown size={10} />
           {sortMode === "priority" ? "PRIORITY" : "LATEST"}
         </button>
+        {(stats?.unreadCount ?? 0) > 0 && (
+          <button
+            onClick={onMarkAllRead}
+            className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground data-readout transition-colors"
+          >
+            <CheckCheck size={10} />
+            MARK ALL READ
+          </button>
+        )}
         {hasActiveFilters && !savingWatchlist && (
           <button
             onClick={() => setSavingWatchlist(true)}

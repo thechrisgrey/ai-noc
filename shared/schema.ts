@@ -24,6 +24,7 @@ export const feedItems = pgTable("feed_items", {
   imageUrl: text("image_url"),
   clusterId: text("cluster_id"),
   priority: integer("priority").notNull().default(0),
+  readAt: text("read_at"),
 }, (table) => [
   index("idx_published_at").on(table.publishedAt),
   index("idx_category_published").on(table.category, table.publishedAt),

@@ -15,6 +15,13 @@
       "when": 1781123403124,
       "tag": "0001_priority_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781145669379,
+      "tag": "0002_read_state",
+      "breakpoints": true
     }
   ]
 }

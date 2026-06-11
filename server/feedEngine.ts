@@ -23,11 +23,13 @@ interface FeedSource {
 
 const FEED_SOURCES: FeedSource[] = [
   // Major AI Labs - Blogs
-  { url: "https://openai.com/blog/rss/", source: "openai", sourceLabel: "OpenAI", defaultCategory: "model_release" },
+  { url: "https://openai.com/news/rss.xml", source: "openai", sourceLabel: "OpenAI", defaultCategory: "model_release" },
+  // FIXME: Anthropic publishes no official RSS/Atom feed (anthropic.com/feed.xml is 404
+  // and /news exposes no <link rel="alternate">); restore when one exists.
   { url: "https://www.anthropic.com/feed.xml", source: "anthropic", sourceLabel: "Anthropic", defaultCategory: "research" },
   { url: "https://blog.google/technology/ai/rss/", source: "google_ai", sourceLabel: "Google AI", defaultCategory: "product" },
-  { url: "https://about.fb.com/news/category/ai-ml/feed/", source: "meta_ai", sourceLabel: "Meta AI", defaultCategory: "research" },
-  { url: "https://mistral.ai/feed.xml", source: "mistral", sourceLabel: "Mistral AI", defaultCategory: "model_release" },
+  { url: "https://about.fb.com/news/tag/ai/feed/", source: "meta_ai", sourceLabel: "Meta AI", defaultCategory: "research" },
+  { url: "https://mistral.ai/rss.xml", source: "mistral", sourceLabel: "Mistral AI", defaultCategory: "model_release" },
 
   // Research & News Aggregators
   { url: "https://arxiv.org/rss/cs.AI", source: "arxiv_ai", sourceLabel: "arXiv AI", defaultCategory: "research" },

@@ -1,7 +1,7 @@
 import { type FeedItem, type InsertFeedItem, type Bookmark, type InsertBookmark, type Watchlist, type InsertWatchlist, type Briefing, type InsertBriefing, feedItems, bookmarks, watchlists, briefings } from "@shared/schema";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, desc, ilike, or, and, lt, gte, count, sql, inArray } from "drizzle-orm";
+import { eq, ne, desc, asc, ilike, or, and, lt, lte, gte, count, sql, inArray, isNull } from "drizzle-orm";
 
 /** Escape LIKE-special characters so they are treated as literals */
 function escapeLike(str: string): string {
@@ -99,11 +99,14 @@ export interface IStorage {
   createBookmark(bookmark: InsertBookmark): Promise<Bookmark>;
   deleteBookmark(feedItemId: number): Promise<void>;
   isBookmarked(feedItemId: number): Promise<boolean>;
+  markRead(ids: number[]): Promise<void>;
+  markAllRead(beforeISO: string): Promise<void>;
   getStats(): Promise<{
     total: number;
     byCategory: Record<string, number>;
     bySource: Record<string, number>;
     breakingCount: number;
+    unreadCount: number;
   }>;
   getRecentItems(hours: number): Promise<FeedItem[]>;
   updateClusterId(id: number, clusterId: string): Promise<void>;
@@ -113,6 +116,9 @@ export interface IStorage {
   decayStalePriorities(hours: number, cap?: number): Promise<number>;
   bulkUpdateClusterIds(rows: { id: number; clusterId: string }[]): Promise<void>;
   getItemsByIds(ids: number[]): Promise<FeedItem[]>;
+  getClusterCounts(clusterIds: string[]): Promise<Map<string, number>>;
+  getClusterSiblings(id: number): Promise<FeedItem[]>;
+  pruneOldItems(days: number): Promise<number>;
   getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
   getSourceActivity(days: number): Promise<Record<string, number[]>>;
   getWatchlists(): Promise<Watchlist[]>;
@@ -269,11 +275,27 @@ export class DatabaseStorage implements IStorage {
     return rows.length > 0;
   }
 
+  async markRead(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.db
+      .update(feedItems)
+      .set({ readAt: new Date().toISOString() })
+      .where(inArray(feedItems.id, ids));
+  }
+
+  async markAllRead(beforeISO: string): Promise<void> {
+    await this.db
+      .update(feedItems)
+      .set({ readAt: new Date().toISOString() })
+      .where(and(isNull(feedItems.readAt), lte(feedItems.publishedAt, beforeISO)));
+  }
+
   async getStats(): Promise<{
     total: number;
     byCategory: Record<string, number>;
     bySource: Record<string, number>;
     breakingCount: number;
+    unreadCount: number;
   }> {
     const [totalRow] = await this.db.select({ value: count() }).from(feedItems);
     const total = totalRow.value;
@@ -298,7 +320,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(feedItems.isBreaking, true));
     const breakingCount = breakingRow.value;
 
-    return { total, byCategory, bySource, breakingCount };
+    const [unreadRow] = await this.db
+      .select({ value: count() })
+      .from(feedItems)
+      .where(isNull(feedItems.readAt));
+    const unreadCount = unreadRow.value;
+
+    return { total, byCategory, bySource, breakingCount, unreadCount };
   }
 
   async getRecentItems(hours: number): Promise<FeedItem[]> {
@@ -375,6 +403,42 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(feedItems)
       .where(inArray(feedItems.id, ids));
+  }
+
+  async getClusterCounts(clusterIds: string[]): Promise<Map<string, number>> {
+    if (clusterIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ clusterId: feedItems.clusterId, value: count() })
+      .from(feedItems)
+      .where(inArray(feedItems.clusterId, clusterIds))
+      .groupBy(feedItems.clusterId);
+    return new Map(
+      rows.map((r: { clusterId: string | null; value: number }) => [
+        r.clusterId as string,
+        Number(r.value),
+      ]),
+    );
+  }
+
+  async getClusterSiblings(id: number): Promise<FeedItem[]> {
+    const item = await this.getFeedItemById(id);
+    if (!item?.clusterId) return [];
+    return await this.db
+      .select()
+      .from(feedItems)
+      .where(and(eq(feedItems.clusterId, item.clusterId), ne(feedItems.id, id)))
+      .orderBy(asc(feedItems.publishedAt));
+  }
+
+  async pruneOldItems(days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const result = await this.db.execute(sql`
+      DELETE FROM ${feedItems}
+      WHERE published_at < ${cutoff}
+        AND id NOT IN (SELECT feed_item_id FROM ${bookmarks})
+    `);
+    // node-postgres reports rowCount; PGlite reports affectedRows.
+    return (result as any).rowCount ?? (result as any).affectedRows ?? 0;
   }
 
   async getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>> {

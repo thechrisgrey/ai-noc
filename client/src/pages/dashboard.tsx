@@ -3,6 +3,7 @@ import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tan
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFeedWebSocket } from "@/hooks/use-feed-websocket";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { Radio, Activity, AlertTriangle, Brain } from "lucide-react";
 import * as notifications from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -50,6 +51,7 @@ export default function Dashboard() {
   );
   const [savingWatchlist, setSavingWatchlist] = useState(false);
   const [watchlistName, setWatchlistName] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
   const { toast } = useToast();
@@ -221,6 +223,49 @@ export default function Dashboard() {
     },
   });
 
+  const markReadMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await apiRequest("POST", "/api/items/read", { ids });
+    },
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/feed"] });
+      const snapshots = queryClient.getQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] });
+      const readAt = new Date().toISOString();
+      const idSet = new Set(ids);
+      queryClient.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ["/api/feed"] }, (data) => {
+        if (!data) return data;
+        return {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              idSet.has(item.id) && !item.readAt ? { ...item, readAt } : item,
+            ),
+          })),
+        };
+      });
+      return { snapshots };
+    },
+    onError: (_err, _vars, context) => {
+      for (const [queryKey, data] of context?.snapshots ?? []) {
+        queryClient.setQueryData(queryKey, data);
+      }
+    },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async (before: string) => {
+      await apiRequest("POST", "/api/feed/read-all", { before });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: () => {
+      toast({ title: "MARK READ FAILED", description: "Could not mark signals read. Try again.", variant: "destructive" });
+    },
+  });
+
   const createWatchlistMutation = useMutation({
     mutationFn: async (body: { name: string; category?: string; source?: string; search?: string; sort?: string }) => {
       const res = await apiRequest("POST", "/api/watchlists", body);
@@ -275,6 +320,19 @@ export default function Dashboard() {
     bookmarkMutation.mutate({ feedItemId: id, isBookmarked });
   }, [bookmarkMutation]);
 
+  const handleMarkRead = useCallback((id: number) => {
+    markReadMutation.mutate([id]);
+  }, [markReadMutation]);
+
+  const handleMarkAllRead = useCallback(() => {
+    if (feedItems.length === 0) return;
+    const newest = feedItems.reduce(
+      (max, item) => (item.publishedAt > max ? item.publishedAt : max),
+      feedItems[0].publishedAt,
+    );
+    markAllReadMutation.mutate(newest);
+  }, [feedItems, markAllReadMutation]);
+
   const handleSelectCategory = useCallback((cat: Category) => {
     setSelectedCategory(cat);
     setShowBookmarks(false);
@@ -309,6 +367,34 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
     setNewSignals(0);
   }, []);
+
+  // ── Keyboard navigation ──
+  const handleNavSelect = useCallback((item: FeedItemWithBookmark) => {
+    setSelectedItemId(item.id);
+    if (!item.readAt) markReadMutation.mutate([item.id]);
+  }, [markReadMutation]);
+
+  const handleNavOpen = useCallback((item: FeedItemWithBookmark) => {
+    if (item.url) window.open(item.url, "_blank", "noopener");
+  }, []);
+
+  const handleNavBookmark = useCallback((item: FeedItemWithBookmark) => {
+    bookmarkMutation.mutate({ feedItemId: item.id, isBookmarked: item.isBookmarked });
+  }, [bookmarkMutation]);
+
+  const handleNavClear = useCallback(() => {
+    setSelectedItemId(null);
+  }, []);
+
+  useKeyboardNav({
+    items: feedItems,
+    selectedId: selectedItemId,
+    onSelect: handleNavSelect,
+    onOpen: handleNavOpen,
+    onBookmark: handleNavBookmark,
+    onClear: handleNavClear,
+    enabled: !showBookmarks,
+  });
 
   // ── Render ──
   return (
@@ -356,7 +442,13 @@ export default function Dashboard() {
             {/* KPI Row */}
             <div className="flex-shrink-0 px-5 py-4 border-b border-white/[0.04]">
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <KpiCard label="TOTAL SIGNALS" value={statsError ? "--" : stats?.total || 0} icon={Radio} color="hsl(68,96%,58%)" />
+                <KpiCard
+                  label="TOTAL SIGNALS"
+                  value={statsError ? "--" : stats?.total || 0}
+                  icon={Radio}
+                  color="hsl(68,96%,58%)"
+                  sub={!statsError && (stats?.unreadCount ?? 0) > 0 ? `${stats!.unreadCount} UNREAD` : undefined}
+                />
                 <KpiCard label="HIGH PRIORITY" value={statsError ? "--" : stats?.breakingCount || 0} icon={AlertTriangle} color="hsl(5,80%,62%)" />
                 <KpiCard label="MODEL RELEASES" value={statsError ? "--" : stats?.byCategory?.model_release || 0} icon={Brain} color="hsl(68,95%,60%)" />
                 <KpiCard label="SOURCES ACTIVE" value={statsError ? "--" : sourceCount} icon={Activity} color="hsl(150,60%,55%)" />
@@ -378,6 +470,7 @@ export default function Dashboard() {
               watchlistName={watchlistName}
               setWatchlistName={setWatchlistName}
               onSaveWatchlist={handleSaveWatchlist}
+              onMarkAllRead={handleMarkAllRead}
               feedItemCount={feedItems.length}
               stats={stats}
               onSelectCategory={handleSelectCategory}
@@ -398,6 +491,8 @@ export default function Dashboard() {
               newSignals={newSignals}
               onDismissNewSignals={handleDismissNewSignals}
               onToggleBookmark={handleToggleBookmark}
+              onMarkRead={handleMarkRead}
+              selectedItemId={selectedItemId}
             />
           </div>
 

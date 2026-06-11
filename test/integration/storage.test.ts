@@ -210,6 +210,167 @@ describe("decayStalePriorities", () => {
   });
 });
 
+describe("read state", () => {
+  let storage: DatabaseStorage;
+  let ids: number[];
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
+    ids = [];
+    for (const [guid, hours] of [["read-a", 1], ["read-b", 2], ["read-c", 3]] as const) {
+      const item = await storage.createFeedItem({
+        title: guid, description: null, url: null,
+        source: "openai", sourceLabel: "OpenAI", category: "product",
+        publishedAt: hoursAgo(hours),
+        fetchedAt: new Date().toISOString(), guid, isBreaking: false, imageUrl: null,
+      });
+      ids.push(item.id);
+    }
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("counts everything unread initially", async () => {
+    const stats = await storage.getStats();
+    expect(stats.unreadCount).toBe(3);
+  });
+
+  it("markRead sets readAt for the given ids only", async () => {
+    await storage.markRead([ids[0]]);
+
+    const read = await storage.getFeedItemById(ids[0]);
+    expect(read?.readAt).toBeTruthy();
+
+    const untouched = await storage.getFeedItemById(ids[1]);
+    expect(untouched?.readAt).toBeNull();
+
+    const stats = await storage.getStats();
+    expect(stats.unreadCount).toBe(2);
+  });
+
+  it("markAllRead only affects unread items published at or before the cutoff", async () => {
+    const twoAndAHalfHoursAgo = new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString();
+    await storage.markAllRead(twoAndAHalfHoursAgo);
+
+    // read-c (3h old) is within the cutoff; read-b (2h old) is newer than it.
+    expect((await storage.getFeedItemById(ids[2]))?.readAt).toBeTruthy();
+    expect((await storage.getFeedItemById(ids[1]))?.readAt).toBeNull();
+
+    const stats = await storage.getStats();
+    expect(stats.unreadCount).toBe(1);
+  });
+});
+
+describe("pruneOldItems", () => {
+  let storage: DatabaseStorage;
+  let oldId: number;
+  let oldBookmarkedId: number;
+  let freshId: number;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+    const make = async (guid: string, days: number) =>
+      (
+        await storage.createFeedItem({
+          title: guid, description: null, url: null,
+          source: "openai", sourceLabel: "OpenAI", category: "product",
+          publishedAt: daysAgo(days),
+          fetchedAt: new Date().toISOString(), guid, isBreaking: false, imageUrl: null,
+        })
+      ).id;
+
+    oldId = await make("prune-old", 120);
+    oldBookmarkedId = await make("prune-old-bookmarked", 120);
+    freshId = await make("prune-fresh", 5);
+
+    await storage.createBookmark({
+      feedItemId: oldBookmarkedId,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("deletes old unbookmarked items but spares bookmarked and fresh ones", async () => {
+    const pruned = await storage.pruneOldItems(90);
+    expect(pruned).toBe(1);
+
+    expect(await storage.getFeedItemById(oldId)).toBeUndefined();
+    expect(await storage.getFeedItemById(oldBookmarkedId)).toBeDefined();
+    expect(await storage.getFeedItemById(freshId)).toBeDefined();
+  });
+
+  it("is idempotent: second run deletes nothing", async () => {
+    expect(await storage.pruneOldItems(90)).toBe(0);
+  });
+});
+
+describe("cluster expansion", () => {
+  let storage: DatabaseStorage;
+  let first: number;
+  let second: number;
+  let third: number;
+  let loner: number;
+
+  beforeAll(async () => {
+    const { storage: s } = await createTestStorage();
+    storage = s;
+
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
+    const make = async (guid: string, hours: number) =>
+      (
+        await storage.createFeedItem({
+          title: guid, description: null, url: null,
+          source: "openai", sourceLabel: "OpenAI", category: "product",
+          publishedAt: hoursAgo(hours),
+          fetchedAt: new Date().toISOString(), guid, isBreaking: false, imageUrl: null,
+        })
+      ).id;
+
+    first = await make("clu-first", 8);
+    second = await make("clu-second", 4);
+    third = await make("clu-third", 1);
+    loner = await make("clu-loner", 2);
+
+    await storage.bulkUpdateClusterIds([
+      { id: first, clusterId: "story-x" },
+      { id: second, clusterId: "story-x" },
+      { id: third, clusterId: "story-x" },
+    ]);
+  });
+
+  afterAll(async () => {
+    await storage.close();
+  });
+
+  it("getClusterCounts returns member counts per cluster id", async () => {
+    const counts = await storage.getClusterCounts(["story-x", "story-missing"]);
+    expect(counts.get("story-x")).toBe(3);
+    expect(counts.has("story-missing")).toBe(false);
+    expect((await storage.getClusterCounts([])).size).toBe(0);
+  });
+
+  it("getClusterSiblings excludes self and orders by publishedAt ascending", async () => {
+    const siblings = await storage.getClusterSiblings(third);
+    expect(siblings.map((i) => i.id)).toEqual([first, second]);
+  });
+
+  it("getClusterSiblings returns empty for unclustered or missing items", async () => {
+    expect(await storage.getClusterSiblings(loner)).toEqual([]);
+    expect(await storage.getClusterSiblings(999999)).toEqual([]);
+  });
+});
+
 describe("getFeedItems sinceHours", () => {
   let storage: DatabaseStorage;
 

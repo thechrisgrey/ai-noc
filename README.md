@@ -27,6 +27,7 @@ Copy `.env.example` to `.env` and fill in values. See `.env.example` for the ful
 | `SEED_DEMO_DATA` | Dev-only demo data seeding; never set in production |
 | `TRUST_PROXY_HOPS` | Number of trusted proxy hops in front of Express |
 | `ORIGIN_VERIFY_TOKEN` | Shared secret verifying requests came through the CDN |
+| `RETENTION_DAYS` | Days to keep unbookmarked feed items; pruning disabled unless > 0 (e.g. `90`) |
 
 ## Scripts
 

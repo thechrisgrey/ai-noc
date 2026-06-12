@@ -75,6 +75,23 @@ function SourcesPanel() {
     queryKey: ["/api/sources"],
   });
 
+  // Any source mutation can shift the section→items mapping, so every
+  // section-scoped query in the dashboard needs a refetch — not just the
+  // source table itself. Prefix-match handles both unscoped and
+  // section-keyed variants of these keys.
+  const invalidateSourceDependentQueries = () => {
+    for (const key of [
+      ["/api/sources"],
+      ["/api/feed"],
+      ["/api/stats"],
+      ["/api/sources/health"],
+      ["/api/sources/activity"],
+      ["/api/sources/intel"],
+    ]) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+
   const addMutation = useMutation({
     mutationFn: async (body: { url: string; label: string; defaultCategory: string; section: Section }) => {
       const res = await apiRequest("POST", "/api/sources", body);
@@ -85,7 +102,7 @@ function SourcesPanel() {
       setFormError(null);
       setUrl("");
       setLabel("");
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+      invalidateSourceDependentQueries();
     },
     onError: (err) => {
       setAdded(null);
@@ -97,18 +114,14 @@ function SourcesPanel() {
     mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) => {
       await apiRequest("PATCH", `/api/sources/${id}`, { enabled });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
-    },
+    onSettled: invalidateSourceDependentQueries,
   });
 
   const sectionMutation = useMutation({
     mutationFn: async ({ id, section: s }: { id: number; section: Section }) => {
       await apiRequest("PATCH", `/api/sources/${id}`, { section: s });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
-    },
+    onSettled: invalidateSourceDependentQueries,
   });
 
   const deleteMutation = useMutation({
@@ -117,7 +130,7 @@ function SourcesPanel() {
     },
     onSettled: () => {
       setArmedId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+      invalidateSourceDependentQueries();
     },
   });
 

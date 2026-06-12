@@ -52,7 +52,7 @@ export function Header({
             <h1 className="text-sm font-semibold tracking-[0.14em] uppercase text-foreground">
               AI OPS CENTER
             </h1>
-            <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground hidden sm:block">
+            <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground hidden lg:block">
               INTELLIGENCE MONITORING & OBSERVABILITY
             </p>
           </div>
@@ -60,7 +60,7 @@ export function Header({
 
         <nav
           aria-label="Section filter"
-          className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.04] p-0.5"
+          className="hidden md:flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.04] p-0.5"
         >
           {SECTION_FILTERS.map((s) => (
             <button
@@ -68,14 +68,13 @@ export function Header({
               onClick={() => onSelectSection(s.value)}
               aria-label={`Show ${s.label} section`}
               aria-pressed={selectedSection === s.value}
-              className={`px-2 sm:px-2.5 py-1 text-[10px] rounded-md uppercase tracking-[0.14em] data-readout transition-colors ${
+              className={`px-2.5 py-1 text-[10px] rounded-md uppercase tracking-[0.14em] data-readout transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 selectedSection === s.value
                   ? "bg-primary/15 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
               }`}
             >
-              <span className="sm:hidden">{s.shortLabel}</span>
-              <span className="hidden sm:inline">{s.label}</span>
+              {s.label}
             </button>
           ))}
         </nav>

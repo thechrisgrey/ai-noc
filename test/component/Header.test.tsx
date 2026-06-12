@@ -3,8 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-// BriefWorkshop opens TanStack Query hooks + fetch on mount; it is not under
-// test here, so stub it out to keep the Header render pure.
+// Not under test; isolate Header from Radix Sheet internals.
 vi.mock("../../client/src/components/dashboard/BriefWorkshop", () => ({
   BriefWorkshop: () => null,
 }));

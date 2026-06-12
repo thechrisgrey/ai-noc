@@ -24,8 +24,8 @@ export function StatusBar({ lastSynced }: { lastSynced?: string }) {
       </span>
       {lastSynced && (
         <>
-          <span className="h-3 w-px bg-white/[0.08]" aria-hidden="true" />
-          <span className="text-muted-foreground/60">
+          <span className="hidden lg:inline h-3 w-px bg-white/[0.08]" aria-hidden="true" />
+          <span className="hidden lg:inline text-muted-foreground/60">
             SYNCED {timeAgo(lastSynced)}
           </span>
         </>

@@ -473,6 +473,8 @@ export default function Dashboard() {
           selectedCategory={selectedCategory}
           showBookmarks={showBookmarks}
           onSelectCategory={handleSelectCategory}
+          selectedSection={selectedSection}
+          onSelectSection={handleSelectSection}
         />
 
         <div className="flex-1 flex overflow-hidden">

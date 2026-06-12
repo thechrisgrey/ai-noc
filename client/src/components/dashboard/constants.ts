@@ -32,12 +32,11 @@ export type SectionFilter = "all" | "ai" | "csp" | "quantum";
 export const SECTION_FILTERS: {
   value: SectionFilter;
   label: string;
-  shortLabel: string;
 }[] = [
-  { value: "all", label: "ALL", shortLabel: "ALL" },
-  { value: "ai", label: "AI", shortLabel: "AI" },
-  { value: "csp", label: "CSP", shortLabel: "CSP" },
-  { value: "quantum", label: "QUANTUM", shortLabel: "QM" },
+  { value: "all", label: "ALL" },
+  { value: "ai", label: "AI" },
+  { value: "csp", label: "CSP" },
+  { value: "quantum", label: "QUANTUM" },
 ];
 
 // ─── Constants ───────────────────────────────────────────────────

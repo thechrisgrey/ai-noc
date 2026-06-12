@@ -58,6 +58,39 @@ describe("sources table (PGlite)", () => {
     expect(new Set(all.map((s) => s.url)).size).toBe(all.length);
   });
 
+  it("assigns every source a section per the 0008 mapping", async () => {
+    const all = await storage.getSources();
+    const bySlug = new Map(all.map((s) => [s.slug, s.section]));
+
+    const csp = [
+      "aws_ml", "aws_whats_new", "amazon_science", "gcp_ai", "deepmind",
+      "google_research", "google_devs", "vertex_genai", "nvidia_dev",
+      "nvidia_genai", "ibm_research",
+    ];
+    const quantum = ["ionq", "quera", "pasqal", "rigetti", "quantum_insider"];
+
+    for (const slug of csp) expect(bySlug.get(slug), slug).toBe("csp");
+    for (const slug of quantum) expect(bySlug.get(slug), slug).toBe("quantum");
+
+    const aiCount = all.filter((s) => s.section === "ai").length;
+    expect(aiCount).toBe(24);
+  });
+
+  it("returns slugs by section and updates a source's section", async () => {
+    const csp = await storage.getSourceSlugsBySection("csp");
+    expect(csp).toHaveLength(11);
+    expect(csp).toContain("aws_ml");
+
+    const all = await storage.getSources();
+    const ionq = all.find((s) => s.slug === "ionq")!;
+    const updated = await storage.updateSource(ionq.id, { section: "ai" });
+    expect(updated?.section).toBe("ai");
+    expect(await storage.getSourceSlugsBySection("quantum")).toHaveLength(4);
+
+    // Restore so later tests in this file see the seeded mapping.
+    await storage.updateSource(ionq.id, { section: "quantum" });
+  });
+
   it("create / update / delete round-trip", async () => {
     const created = await storage.createSource({
       slug: "test_feed",

@@ -57,6 +57,13 @@
       "when": 1781234486754,
       "tag": "0007_csp_quantum_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781274454212,
+      "tag": "0008_source_sections",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
-import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, keepPreviousData, type InfiniteData } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFeedWebSocket } from "@/hooks/use-feed-websocket";
@@ -19,6 +19,7 @@ import {
   KpiCard,
   getTimeGroup,
   type Category,
+  type SectionFilter,
   type FeedItemWithBookmark,
   type Stats,
 } from "@/components/dashboard";
@@ -52,6 +53,13 @@ export default function Dashboard() {
       (localStorage.getItem("ai-noc-sort") as "time" | "priority") ||
       "time",
   );
+  const [selectedSection, setSelectedSection] = useState<SectionFilter>(() => {
+    const fromUrl = initParams.get("section");
+    if (fromUrl === "ai" || fromUrl === "csp" || fromUrl === "quantum") return fromUrl;
+    const stored = localStorage.getItem("ai-noc-section");
+    if (stored === "ai" || stored === "csp" || stored === "quantum") return stored;
+    return "all";
+  });
   const [savingWatchlist, setSavingWatchlist] = useState(false);
   const [watchlistName, setWatchlistName] = useState("");
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
@@ -71,13 +79,18 @@ export default function Dashboard() {
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (sortMode !== "time") params.set("sort", sortMode);
     if (isSemantic) params.set("mode", "semantic");
+    if (selectedSection !== "all") params.set("section", selectedSection);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic]);
+  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic, selectedSection]);
 
   useEffect(() => {
     localStorage.setItem("ai-noc-sort", sortMode);
   }, [sortMode]);
+
+  useEffect(() => {
+    localStorage.setItem("ai-noc-section", selectedSection);
+  }, [selectedSection]);
 
   // ── WebSocket ──
   const wsCallbacks = useMemo(() => ({
@@ -126,7 +139,7 @@ export default function Dashboard() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<FeedPage>({
-    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
+    queryKey: ["/api/feed", selectedSection, selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (selectedCategory !== "all") params.set("category", selectedCategory);
@@ -134,6 +147,7 @@ export default function Dashboard() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (sortMode !== "time") params.set("sort", sortMode);
       if (isSemantic) params.set("mode", "semantic");
+      if (selectedSection !== "all") params.set("section", selectedSection);
       // Semantic results come as a single distance-ranked page (nextCursor null).
       if (pageParam && !isSemantic) params.set("cursor", pageParam as string);
       params.set("limit", "30");
@@ -142,6 +156,7 @@ export default function Dashboard() {
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     initialPageParam: undefined as string | undefined,
+    placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       (query.state.data?.pages.length ?? 0) <= 3 ? 60000 : false,
   });
@@ -161,8 +176,14 @@ export default function Dashboard() {
   }, [feedData]);
 
   const { data: stats, isError: statsError } = useQuery<Stats>({
-    queryKey: ["/api/stats"],
+    queryKey: ["/api/stats", selectedSection],
+    queryFn: async () => {
+      const qs = selectedSection !== "all" ? `?section=${selectedSection}` : "";
+      const res = await apiRequest("GET", `/api/stats${qs}`);
+      return res.json();
+    },
     refetchInterval: 30000,
+    placeholderData: keepPreviousData,
   });
 
   const { data: bookmarksList = [] } = useQuery<any[]>({
@@ -375,6 +396,11 @@ export default function Dashboard() {
     setShowBookmarks(false);
   }, []);
 
+  const handleSelectSection = useCallback((s: SectionFilter) => {
+    setSelectedSection(s);
+    setShowBookmarks(false);
+  }, []);
+
   const handleSelectSource = useCallback((source: string) => {
     setSelectedSource((prev) => prev === source ? "all" : source);
     setShowBookmarks(false);
@@ -451,6 +477,8 @@ export default function Dashboard() {
           setNotificationsEnabled={setNotificationsEnabled}
           refreshMutation={refreshMutation}
           bookmarksCount={bookmarksList.length}
+          selectedSection={selectedSection}
+          onSelectSection={handleSelectSection}
         />
 
         <MobileCategoryBar
@@ -458,6 +486,8 @@ export default function Dashboard() {
           selectedCategory={selectedCategory}
           showBookmarks={showBookmarks}
           onSelectCategory={handleSelectCategory}
+          selectedSection={selectedSection}
+          onSelectSection={handleSelectSection}
         />
 
         <div className="flex-1 flex overflow-hidden">
@@ -536,7 +566,7 @@ export default function Dashboard() {
             />
           </div>
 
-          <IntelPanel stats={stats} feedItems={feedItems} />
+          <IntelPanel stats={stats} feedItems={feedItems} section={selectedSection} />
         </div>
       </div>
     </div>

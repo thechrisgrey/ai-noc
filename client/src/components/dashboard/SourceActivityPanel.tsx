@@ -1,10 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Sparkline } from "./Sparkline";
 import { getSourceMeta } from "./utils";
+import type { SectionFilter } from "./constants";
 
-export function SourceActivityPanel() {
+export function SourceActivityPanel({ section }: { section: SectionFilter }) {
   const { data: activity } = useQuery<Record<string, number[]>>({
-    queryKey: ["/api/sources/activity"],
+    queryKey: ["/api/sources/activity", section],
+    queryFn: async () => {
+      const qs = section !== "all" ? `?section=${section}` : "";
+      const res = await apiRequest("GET", `/api/sources/activity${qs}`);
+      return res.json();
+    },
     refetchInterval: 120000,
   });
 

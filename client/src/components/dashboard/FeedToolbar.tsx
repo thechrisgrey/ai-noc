@@ -1,5 +1,5 @@
 import { Search, X, ArrowUpDown, Bookmark, Filter, CheckCheck, Sparkles } from "lucide-react";
-import { CATEGORIES, type Category, type Stats } from "./constants";
+import { CATEGORIES, SECTION_FILTERS, type Category, type SectionFilter, type Stats } from "./constants";
 import { getSourceMeta } from "./utils";
 
 interface FeedToolbarProps {
@@ -165,38 +165,66 @@ export function MobileCategoryBar({
   selectedCategory,
   showBookmarks,
   onSelectCategory,
+  selectedSection,
+  onSelectSection,
 }: {
   stats?: Stats;
   selectedCategory: Category;
   showBookmarks: boolean;
   onSelectCategory: (cat: Category) => void;
+  selectedSection: SectionFilter;
+  onSelectSection: (s: SectionFilter) => void;
 }) {
   return (
-    <div className="lg:hidden flex-shrink-0 border-b border-white/[0.06] px-3 py-2 overflow-x-auto hide-scrollbar">
-      <div className="flex gap-1.5">
-        {CATEGORIES.map((cat) => {
-          const count =
-            cat.value === "all"
-              ? stats?.total || 0
-              : stats?.byCategory?.[cat.value] || 0;
-          const isActive =
-            selectedCategory === cat.value && !showBookmarks;
-          return (
-            <button
-              key={cat.value}
-              onClick={() => onSelectCategory(cat.value)}
-              aria-current={isActive ? "true" : undefined}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.14em] font-medium transition-all whitespace-nowrap ${
-                isActive
-                  ? "bg-primary/15 text-primary border-primary/25"
-                  : "text-muted-foreground border-transparent hover:bg-white/[0.05] hover:text-foreground"
-              }`}
-            >
-              {cat.shortLabel}
-              <span className="data-readout tabular-nums opacity-60">{count}</span>
-            </button>
-          );
-        })}
+    <div className="lg:hidden flex-shrink-0 border-b border-white/[0.06]">
+      <div className="px-3 pt-2 pb-1 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-1.5">
+          {SECTION_FILTERS.map((s) => {
+            const isActive = selectedSection === s.value;
+            return (
+              <button
+                key={s.value}
+                onClick={() => onSelectSection(s.value)}
+                aria-pressed={isActive}
+                aria-label={`Show ${s.label} section`}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.14em] font-medium transition-all whitespace-nowrap focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  isActive
+                    ? "bg-primary/15 text-primary border-primary/25"
+                    : "text-muted-foreground border-transparent hover:bg-white/[0.05] hover:text-foreground"
+                }`}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="px-3 pb-2 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-1.5">
+          {CATEGORIES.map((cat) => {
+            const count =
+              cat.value === "all"
+                ? stats?.total || 0
+                : stats?.byCategory?.[cat.value] || 0;
+            const isActive =
+              selectedCategory === cat.value && !showBookmarks;
+            return (
+              <button
+                key={cat.value}
+                onClick={() => onSelectCategory(cat.value)}
+                aria-current={isActive ? "true" : undefined}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.14em] font-medium transition-all whitespace-nowrap ${
+                  isActive
+                    ? "bg-primary/15 text-primary border-primary/25"
+                    : "text-muted-foreground border-transparent hover:bg-white/[0.05] hover:text-foreground"
+                }`}
+              >
+                {cat.shortLabel}
+                <span className="data-readout tabular-nums opacity-60">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

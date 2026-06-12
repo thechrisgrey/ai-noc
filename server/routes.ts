@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { timingSafeEqualStr } from "./originVerify";
-import { PRIORITY_ALERT_THRESHOLD } from "@shared/constants";
+import { PRIORITY_ALERT_THRESHOLD, SECTIONS } from "@shared/constants";
 import { fetchAllFeeds, probeFeedUrl, seedDemoData, type FetchResult } from "./feedEngine";
 import { getHealthMap, getHealthSummary } from "./feedHealth";
 import { generateBriefing } from "./briefing";
@@ -226,10 +226,25 @@ export async function registerRoutes(
     });
   }
 
+  // Resolve an optional ?section= query param to the slug list it scopes to.
+  // undefined param → no filter; invalid value → caller returns 400.
+  async function resolveSectionSlugs(
+    sectionParam: unknown,
+  ): Promise<{ ok: true; slugs?: string[] } | { ok: false; error: string }> {
+    if (sectionParam === undefined) return { ok: true };
+    if (
+      typeof sectionParam !== "string" ||
+      !(SECTIONS as readonly string[]).includes(sectionParam)
+    ) {
+      return { ok: false, error: `section must be one of: ${SECTIONS.join(", ")}` };
+    }
+    return { ok: true, slugs: await storage.getSourceSlugsBySection(sectionParam) };
+  }
+
   // Get feed items with optional filters + cursor pagination
   app.get("/api/feed", async (req, res) => {
     try {
-      const { limit, cursor, category, source, search, sort, mode } = req.query;
+      const { limit, cursor, category, source, search, sort, mode, section } = req.query;
 
       // Validate & sanitize inputs
       const validCategories = ["all", "model_release", "research", "funding", "product", "policy", "infrastructure"];
@@ -238,6 +253,9 @@ export async function registerRoutes(
       const safeSort = sort === "priority" ? "priority" as const : "time" as const;
       const safeSource = typeof source === "string" && /^[a-z0-9_]+$/.test(source) ? source : undefined;
       const safeSearch = typeof search === "string" ? search.trim().slice(0, 200) || undefined : undefined;
+
+      const sec = await resolveSectionSlugs(section);
+      if (!sec.ok) return res.status(400).json({ error: sec.error });
 
       // Semantic mode: embed the query and rank by cosine distance. Bypasses
       // cursor pagination (nextCursor null). Falls through to lexical when the
@@ -249,6 +267,7 @@ export async function registerRoutes(
             limit: safeLimit,
             category: safeCategory,
             source: safeSource,
+            sourceSlugs: sec.slugs,
           });
           const decorated = await decorateItems(items);
           return res.json({ items: decorated, nextCursor: null });
@@ -262,6 +281,7 @@ export async function registerRoutes(
         source: safeSource,
         search: safeSearch,
         sort: safeSort,
+        sourceSlugs: sec.slugs,
       });
 
       const itemsWithBookmarks = await decorateItems(result.items);
@@ -273,9 +293,11 @@ export async function registerRoutes(
   });
 
   // Get stats/metrics
-  app.get("/api/stats", async (_req, res) => {
+  app.get("/api/stats", async (req, res) => {
     try {
-      const stats = await storage.getStats();
+      const sec = await resolveSectionSlugs(req.query.section);
+      if (!sec.ok) return res.status(400).json({ error: sec.error });
+      const stats = await storage.getStats({ sourceSlugs: sec.slugs });
       res.json({ ...stats, lastRefreshed });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch stats" });
@@ -355,9 +377,11 @@ export async function registerRoutes(
   });
 
   // Source activity (sparkline data over last 7 days)
-  app.get("/api/sources/activity", async (_req, res) => {
+  app.get("/api/sources/activity", async (req, res) => {
     try {
-      const activity = await storage.getSourceActivity(7);
+      const sec = await resolveSectionSlugs(req.query.section);
+      if (!sec.ok) return res.status(400).json({ error: sec.error });
+      const activity = await storage.getSourceActivity(7, sec.slugs);
       res.json(activity);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source activity" });
@@ -370,7 +394,9 @@ export async function registerRoutes(
       const allowed = [7, 30, 90];
       const requested = parseInt(req.query.days as string, 10);
       const windowDays = allowed.includes(requested) ? requested : 30;
-      const sources = await storage.getSourceIntel(windowDays);
+      const sec = await resolveSectionSlugs(req.query.section);
+      if (!sec.ok) return res.status(400).json({ error: sec.error });
+      const sources = await storage.getSourceIntel(windowDays, sec.slugs);
       res.json({ windowDays, sources });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source intel" });
@@ -378,10 +404,21 @@ export async function registerRoutes(
   });
 
   // Source health
-  app.get("/api/sources/health", async (_req, res) => {
+  app.get("/api/sources/health", async (req, res) => {
     try {
-      const health = getHealthMap();
-      const summary = getHealthSummary();
+      const sec = await resolveSectionSlugs(req.query.section);
+      if (!sec.ok) return res.status(400).json({ error: sec.error });
+      let health = getHealthMap();
+      let summary = getHealthSummary();
+      if (sec.slugs) {
+        const allowed = new Set(sec.slugs);
+        health = Object.fromEntries(
+          Object.entries(health).filter(([slug]) => allowed.has(slug)),
+        );
+        const entries = Object.values(health);
+        const failing = entries.filter((h) => h.consecutiveFailures > 0).length;
+        summary = { online: entries.length - failing, failing, total: entries.length };
+      }
       res.json({ health, summary });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch source health" });
@@ -419,6 +456,11 @@ export async function registerRoutes(
         return res.status(409).json({ error: "A source with this URL already exists" });
       }
 
+      const section = req.body?.section ?? "ai";
+      if (!(SECTIONS as readonly string[]).includes(section)) {
+        return res.status(400).json({ error: `section must be one of: ${SECTIONS.join(", ")}` });
+      }
+
       let probe: { feedTitle: string; itemCount: number };
       try {
         probe = await probeFeedUrl(validated.url);
@@ -434,6 +476,7 @@ export async function registerRoutes(
         label: validated.label,
         url: validated.url,
         defaultCategory: validated.defaultCategory,
+        section,
         enabled: true,
         createdAt: new Date().toISOString(),
       });
@@ -449,7 +492,7 @@ export async function registerRoutes(
       if (!Number.isInteger(id)) {
         return res.status(400).json({ error: "id must be an integer" });
       }
-      const { enabled, label, defaultCategory } = req.body ?? {};
+      const { enabled, label, defaultCategory, section } = req.body ?? {};
       if (enabled !== undefined && typeof enabled !== "boolean") {
         return res.status(400).json({ error: "enabled must be a boolean" });
       }
@@ -461,10 +504,14 @@ export async function registerRoutes(
           .status(400)
           .json({ error: `defaultCategory must be one of: ${SOURCE_CATEGORIES.join(", ")}` });
       }
+      if (section !== undefined && !(SECTIONS as readonly string[]).includes(section)) {
+        return res.status(400).json({ error: `section must be one of: ${SECTIONS.join(", ")}` });
+      }
       const updated = await storage.updateSource(id, {
         enabled,
         label: typeof label === "string" ? label.trim() : undefined,
         defaultCategory,
+        section,
       });
       if (!updated) {
         return res.status(404).json({ error: "Source not found" });

@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Activity } from "lucide-react";
-import { type FeedItemWithBookmark, type Stats } from "./constants";
+import { type FeedItemWithBookmark, type Stats, type SectionFilter } from "./constants";
 import { CategoryDistribution } from "./CategoryDistribution";
 import { TrendingPanel } from "./TrendingPanel";
 import { BreakingAlerts } from "./BreakingAlerts";
@@ -13,12 +13,13 @@ const SignalGlobe = lazy(() => import("@/components/three/SignalGlobe"));
 interface IntelPanelProps {
   stats?: Stats;
   feedItems: FeedItemWithBookmark[];
+  section: SectionFilter;
 }
 
 const SECTION_CARD =
   "rounded-2xl bg-card border border-white/[0.06] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_4px_16px_rgba(0,0,0,0.35)] empty:hidden";
 
-export function IntelPanel({ stats, feedItems }: IntelPanelProps) {
+export function IntelPanel({ stats, feedItems, section }: IntelPanelProps) {
   const sourceCount = Object.keys(stats?.bySource || {}).length;
 
   return (
@@ -59,15 +60,15 @@ export function IntelPanel({ stats, feedItems }: IntelPanelProps) {
         </section>
 
         <section className={SECTION_CARD}>
-          <FeedHealthBanner />
+          <FeedHealthBanner section={section} />
         </section>
 
         <section className={SECTION_CARD}>
-          <SourceIntelPanel />
+          <SourceIntelPanel section={section} />
         </section>
 
         <section className={SECTION_CARD}>
-          <SourceActivityPanel />
+          <SourceActivityPanel section={section} />
         </section>
       </div>
     </aside>

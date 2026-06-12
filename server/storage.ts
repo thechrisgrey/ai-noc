@@ -131,6 +131,7 @@ export interface IStorage {
     search?: string;
     sort?: "time" | "priority";
     sinceHours?: number;
+    sourceSlugs?: string[];
   }): Promise<PaginatedFeed>;
   getFeedItemById(id: number): Promise<FeedItem | undefined>;
   createFeedItem(item: InsertFeedItem): Promise<FeedItem>;
@@ -141,7 +142,7 @@ export interface IStorage {
   isBookmarked(feedItemId: number): Promise<boolean>;
   markRead(ids: number[]): Promise<void>;
   markAllRead(beforeISO: string): Promise<void>;
-  getStats(): Promise<{
+  getStats(opts?: { sourceSlugs?: string[] }): Promise<{
     total: number;
     byCategory: Record<string, number>;
     bySource: Record<string, number>;
@@ -153,7 +154,7 @@ export interface IStorage {
   getItemsMissingEmbeddings(limit: number): Promise<FeedItem[]>;
   searchSemantic(
     queryVec: number[],
-    opts?: { limit?: number; sinceHours?: number; category?: string; source?: string },
+    opts?: { limit?: number; sinceHours?: number; category?: string; source?: string; sourceSlugs?: string[] },
   ): Promise<FeedItem[]>;
   getRelatedItems(id: number, limit?: number): Promise<FeedItem[]>;
   updateClusterId(id: number, clusterId: string): Promise<void>;
@@ -167,8 +168,8 @@ export interface IStorage {
   getClusterSiblings(id: number): Promise<FeedItem[]>;
   pruneOldItems(days: number): Promise<number>;
   getBookmarkedIds(feedItemIds: number[]): Promise<Set<number>>;
-  getSourceActivity(days: number): Promise<Record<string, number[]>>;
-  getSourceIntel(days: number): Promise<SourceIntelRow[]>;
+  getSourceActivity(days: number, sourceSlugs?: string[]): Promise<Record<string, number[]>>;
+  getSourceIntel(days: number, sourceSlugs?: string[]): Promise<SourceIntelRow[]>;
   getWatchlists(): Promise<Watchlist[]>;
   createWatchlist(w: InsertWatchlist): Promise<Watchlist>;
   updateWatchlist(
@@ -187,10 +188,11 @@ export interface IStorage {
     patch: { content?: string; subject?: string | null; status?: string; sentAt?: string | null },
   ): Promise<Briefing | undefined>;
   getSources(enabledOnly?: boolean): Promise<Source[]>;
+  getSourceSlugsBySection(section: string): Promise<string[]>;
   createSource(s: InsertSource): Promise<Source>;
   updateSource(
     id: number,
-    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string; section?: string },
   ): Promise<Source | undefined>;
   deleteSource(id: number): Promise<void>;
   close(): Promise<void>;
@@ -217,8 +219,16 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     sort?: "time" | "priority";
     sinceHours?: number;
+    sourceSlugs?: string[];
   } = {}): Promise<PaginatedFeed> {
-    const { limit = 30, cursor, category, source, search, sort = "time", sinceHours } = opts;
+    const { limit = 30, cursor, category, source, search, sort = "time", sinceHours, sourceSlugs } = opts;
+
+    // An explicit empty slug list means "a section with no sources": nothing
+    // matches, by design (not "no filter").
+    if (sourceSlugs && sourceSlugs.length === 0) {
+      return { items: [], nextCursor: null };
+    }
+
     const conditions: any[] = [];
 
     if (cursor) {
@@ -268,6 +278,9 @@ export class DatabaseStorage implements IStorage {
           ilike(feedItems.description, `%${escaped}%`),
         ),
       );
+    }
+    if (sourceSlugs) {
+      conditions.push(inArray(feedItems.source, sourceSlugs));
     }
 
     const orderBy =
@@ -357,40 +370,51 @@ export class DatabaseStorage implements IStorage {
       .where(and(isNull(feedItems.readAt), lte(feedItems.publishedAt, beforeISO)));
   }
 
-  async getStats(): Promise<{
+  async getStats(opts: { sourceSlugs?: string[] } = {}): Promise<{
     total: number;
     byCategory: Record<string, number>;
     bySource: Record<string, number>;
     breakingCount: number;
     unreadCount: number;
   }> {
-    const [totalRow] = await this.db.select({ value: count() }).from(feedItems);
+    const { sourceSlugs } = opts;
+    if (sourceSlugs && sourceSlugs.length === 0) {
+      return { total: 0, byCategory: {}, bySource: {}, breakingCount: 0, unreadCount: 0 };
+    }
+    const slugCond = sourceSlugs ? inArray(feedItems.source, sourceSlugs) : undefined;
+
+    const totalQ = this.db.select({ value: count() }).from(feedItems);
+    const [totalRow] = slugCond ? await totalQ.where(slugCond) : await totalQ;
     const total = totalRow.value;
 
-    const catRows = await this.db
+    const catQ = this.db
       .select({ category: feedItems.category, value: count() })
-      .from(feedItems)
-      .groupBy(feedItems.category);
+      .from(feedItems);
+    const catRows = slugCond
+      ? await catQ.where(slugCond).groupBy(feedItems.category)
+      : await catQ.groupBy(feedItems.category);
     const byCategory: Record<string, number> = {};
     for (const r of catRows) byCategory[r.category] = r.value;
 
-    const srcRows = await this.db
+    const srcQ = this.db
       .select({ source: feedItems.source, value: count() })
-      .from(feedItems)
-      .groupBy(feedItems.source);
+      .from(feedItems);
+    const srcRows = slugCond
+      ? await srcQ.where(slugCond).groupBy(feedItems.source)
+      : await srcQ.groupBy(feedItems.source);
     const bySource: Record<string, number> = {};
     for (const r of srcRows) bySource[r.source] = r.value;
 
     const [breakingRow] = await this.db
       .select({ value: count() })
       .from(feedItems)
-      .where(eq(feedItems.isBreaking, true));
+      .where(slugCond ? and(eq(feedItems.isBreaking, true), slugCond) : eq(feedItems.isBreaking, true));
     const breakingCount = breakingRow.value;
 
     const [unreadRow] = await this.db
       .select({ value: count() })
       .from(feedItems)
-      .where(isNull(feedItems.readAt));
+      .where(slugCond ? and(isNull(feedItems.readAt), slugCond) : isNull(feedItems.readAt));
     const unreadCount = unreadRow.value;
 
     return { total, byCategory, bySource, breakingCount, unreadCount };
@@ -434,9 +458,10 @@ export class DatabaseStorage implements IStorage {
 
   async searchSemantic(
     queryVec: number[],
-    opts: { limit?: number; sinceHours?: number; category?: string; source?: string } = {},
+    opts: { limit?: number; sinceHours?: number; category?: string; source?: string; sourceSlugs?: string[] } = {},
   ): Promise<FeedItem[]> {
-    const { limit = 30, sinceHours, category, source } = opts;
+    const { limit = 30, sinceHours, category, source, sourceSlugs } = opts;
+    if (sourceSlugs && sourceSlugs.length === 0) return [];
     const literal = toVectorLiteral(queryVec);
     const since =
       sinceHours !== undefined
@@ -448,10 +473,14 @@ export class DatabaseStorage implements IStorage {
       category && category !== "all" ? sql` AND category = ${category}` : sql``;
     const srcFilter =
       source && source !== "all" ? sql` AND source = ${source}` : sql``;
+    const slugsFilter =
+      sourceSlugs && sourceSlugs.length > 0
+        ? sql` AND source IN (${sql.join(sourceSlugs.map((s) => sql`${s}`), sql`, `)})`
+        : sql``;
     const result = await this.db.execute(sql`
       SELECT *, embedding <=> ${literal}::vector AS distance
       FROM ${feedItems}
-      WHERE embedding IS NOT NULL${since}${catFilter}${srcFilter}
+      WHERE embedding IS NOT NULL${since}${catFilter}${srcFilter}${slugsFilter}
       ORDER BY distance ASC
       LIMIT ${limit}
     `);
@@ -603,16 +632,21 @@ export class DatabaseStorage implements IStorage {
     return new Set(rows.map((r: { feedItemId: number }) => r.feedItemId));
   }
 
-  async getSourceActivity(days: number): Promise<Record<string, number[]>> {
+  async getSourceActivity(days: number, sourceSlugs?: string[]): Promise<Record<string, number[]>> {
+    if (sourceSlugs && sourceSlugs.length === 0) return {};
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const totalHours = days * 24;
+    const slugsFilter =
+      sourceSlugs && sourceSlugs.length > 0
+        ? sql` AND ${feedItems.source} IN (${sql.join(sourceSlugs.map((s) => sql`${s}`), sql`, `)})`
+        : sql``;
 
     const rows = await this.db.execute(
       sql`SELECT ${feedItems.source} as source,
             date_trunc('hour', ${feedItems.publishedAt}::timestamp) as hour,
             COUNT(*)::int as count
           FROM ${feedItems}
-          WHERE ${feedItems.publishedAt} > ${cutoff}
+          WHERE ${feedItems.publishedAt} > ${cutoff}${slugsFilter}
           GROUP BY ${feedItems.source}, hour
           ORDER BY hour`
     );
@@ -647,15 +681,23 @@ export class DatabaseStorage implements IStorage {
   // First-mover leaderboard: within each multi-source story cluster, credit the
   // source(s) that published at the earliest timestamp as the "first", and
   // measure how far behind the rest trailed (median lag, in seconds).
-  async getSourceIntel(days: number): Promise<SourceIntelRow[]> {
+  // When sourceSlugs is passed, "first" and median lag are computed within the
+  // filtered set only (a section-relative leaderboard), since the slug filter
+  // applies inside the CTE before the window functions.
+  async getSourceIntel(days: number, sourceSlugs?: string[]): Promise<SourceIntelRow[]> {
+    if (sourceSlugs && sourceSlugs.length === 0) return [];
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const slugsFilter =
+      sourceSlugs && sourceSlugs.length > 0
+        ? sql` AND source IN (${sql.join(sourceSlugs.map((s) => sql`${s}`), sql`, `)})`
+        : sql``;
     const rows = await this.db.execute(sql`
       WITH clustered AS (
         SELECT source, source_label, published_at,
                MIN(published_at) OVER (PARTITION BY cluster_id) AS cluster_first,
                COUNT(*) OVER (PARTITION BY cluster_id) AS cluster_size
         FROM ${feedItems}
-        WHERE cluster_id IS NOT NULL AND published_at > ${cutoff}
+        WHERE cluster_id IS NOT NULL AND published_at > ${cutoff}${slugsFilter}
       )
       SELECT source,
              MAX(source_label) AS source_label,
@@ -787,6 +829,14 @@ export class DatabaseStorage implements IStorage {
       : await query.orderBy(asc(sources.id));
   }
 
+  async getSourceSlugsBySection(section: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ slug: sources.slug })
+      .from(sources)
+      .where(eq(sources.section, section));
+    return rows.map((r: { slug: string }) => r.slug);
+  }
+
   async createSource(s: InsertSource): Promise<Source> {
     const rows = await this.db.insert(sources).values(s).returning();
     return rows[0];
@@ -794,12 +844,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateSource(
     id: number,
-    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string; section?: string },
   ): Promise<Source | undefined> {
     const set: Partial<InsertSource> = {};
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
     if (patch.label !== undefined) set.label = patch.label;
     if (patch.defaultCategory !== undefined) set.defaultCategory = patch.defaultCategory;
+    if (patch.section !== undefined) set.section = patch.section;
     if (Object.keys(set).length === 0) {
       const rows = await this.db.select().from(sources).where(eq(sources.id, id)).limit(1);
       return rows[0];

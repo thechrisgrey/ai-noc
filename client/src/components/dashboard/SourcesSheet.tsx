@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { CATEGORIES } from "./constants";
 import { getSourceMeta } from "./utils";
+import { SECTIONS, type Section } from "@shared/constants";
 
 interface ManagedSource {
   id: number;
@@ -27,6 +28,7 @@ interface ManagedSource {
   label: string;
   url: string;
   defaultCategory: string;
+  section: Section;
   enabled: boolean;
   createdAt: string;
   itemCount: number;
@@ -41,6 +43,8 @@ interface ManagedSource {
 }
 
 const SOURCE_CATEGORIES = CATEGORIES.filter((c) => c.value !== "all");
+
+const SOURCE_SECTIONS = SECTIONS.map((s) => ({ value: s, label: s.toUpperCase() }));
 
 const INPUT_CLASS =
   "w-full text-[11px] px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 data-readout";
@@ -62,6 +66,7 @@ function SourcesPanel() {
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
   const [category, setCategory] = useState("");
+  const [section, setSection] = useState<Section>("ai");
   const [formError, setFormError] = useState<string | null>(null);
   const [added, setAdded] = useState<{ feedTitle: string; itemCount: number } | null>(null);
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -70,8 +75,25 @@ function SourcesPanel() {
     queryKey: ["/api/sources"],
   });
 
+  // Any source mutation can shift the section→items mapping, so every
+  // section-scoped query in the dashboard needs a refetch — not just the
+  // source table itself. Prefix-match handles both unscoped and
+  // section-keyed variants of these keys.
+  const invalidateSourceDependentQueries = () => {
+    for (const key of [
+      ["/api/sources"],
+      ["/api/feed"],
+      ["/api/stats"],
+      ["/api/sources/health"],
+      ["/api/sources/activity"],
+      ["/api/sources/intel"],
+    ]) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+
   const addMutation = useMutation({
-    mutationFn: async (body: { url: string; label: string; defaultCategory: string }) => {
+    mutationFn: async (body: { url: string; label: string; defaultCategory: string; section: Section }) => {
       const res = await apiRequest("POST", "/api/sources", body);
       return res.json() as Promise<ManagedSource & { feedTitle: string; itemCount: number }>;
     },
@@ -80,7 +102,7 @@ function SourcesPanel() {
       setFormError(null);
       setUrl("");
       setLabel("");
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+      invalidateSourceDependentQueries();
     },
     onError: (err) => {
       setAdded(null);
@@ -92,9 +114,14 @@ function SourcesPanel() {
     mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) => {
       await apiRequest("PATCH", `/api/sources/${id}`, { enabled });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+    onSettled: invalidateSourceDependentQueries,
+  });
+
+  const sectionMutation = useMutation({
+    mutationFn: async ({ id, section: s }: { id: number; section: Section }) => {
+      await apiRequest("PATCH", `/api/sources/${id}`, { section: s });
     },
+    onSettled: invalidateSourceDependentQueries,
   });
 
   const deleteMutation = useMutation({
@@ -103,7 +130,7 @@ function SourcesPanel() {
     },
     onSettled: () => {
       setArmedId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+      invalidateSourceDependentQueries();
     },
   });
 
@@ -114,7 +141,7 @@ function SourcesPanel() {
     if (!canSubmit) return;
     setAdded(null);
     setFormError(null);
-    addMutation.mutate({ url: url.trim(), label: label.trim(), defaultCategory: category });
+    addMutation.mutate({ url: url.trim(), label: label.trim(), defaultCategory: category, section });
   };
 
   return (
@@ -156,6 +183,25 @@ function SourcesPanel() {
                 className="text-[10px] data-readout uppercase tracking-[0.14em]"
               >
                 {cat.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={section} onValueChange={(v) => setSection(v as Section)}>
+          <SelectTrigger
+            aria-label="Section"
+            className="h-8 text-[10px] rounded-lg border-white/[0.08] bg-white/[0.04] data-readout uppercase tracking-[0.14em]"
+          >
+            <SelectValue placeholder="SECTION" />
+          </SelectTrigger>
+          <SelectContent>
+            {SOURCE_SECTIONS.map((sec) => (
+              <SelectItem
+                key={sec.value}
+                value={sec.value}
+                className="text-[10px] data-readout uppercase tracking-[0.14em]"
+              >
+                {sec.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -218,6 +264,28 @@ function SourcesPanel() {
               <span className="data-readout text-[10px] tabular-nums text-muted-foreground flex-shrink-0">
                 {s.itemCount}
               </span>
+              <Select
+                value={s.section || "ai"}
+                onValueChange={(v) => sectionMutation.mutate({ id: s.id, section: v as Section })}
+              >
+                <SelectTrigger
+                  aria-label={`Section for ${s.label}`}
+                  className="h-6 w-[88px] text-[9px] rounded border-white/[0.08] bg-white/[0.04] data-readout uppercase tracking-[0.14em] flex-shrink-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCE_SECTIONS.map((sec) => (
+                    <SelectItem
+                      key={sec.value}
+                      value={sec.value}
+                      className="text-[9px] data-readout uppercase tracking-[0.14em]"
+                    >
+                      {sec.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Switch
                 checked={s.enabled}
                 onCheckedChange={(enabled) => toggleMutation.mutate({ id: s.id, enabled })}

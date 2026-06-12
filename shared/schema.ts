@@ -88,6 +88,8 @@ export const sources = pgTable("sources", {
   label: text("label").notNull(),
   url: text("url").notNull().unique(),
   defaultCategory: text("default_category").notNull(),
+  // Domain section ('ai' | 'csp' | 'quantum'); see SECTIONS in shared/constants.
+  section: text("section").notNull().default("ai"),
   enabled: boolean("enabled").notNull().default(true),
   createdAt: text("created_at").notNull(),
 });

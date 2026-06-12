@@ -7,5 +7,6 @@ export { BriefingPanel } from "./BriefingPanel";
 export { BriefWorkshop } from "./BriefWorkshop";
 export { KpiCard } from "./KpiCard";
 
-export type { Category, FeedItemWithBookmark, Stats } from "./constants";
+export type { Category, SectionFilter, FeedItemWithBookmark, Stats } from "./constants";
+export { SECTION_FILTERS } from "./constants";
 export { getTimeGroup } from "./utils";

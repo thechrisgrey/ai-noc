@@ -76,6 +76,21 @@ describe("sources table (PGlite)", () => {
     expect(aiCount).toBe(24);
   });
 
+  it("returns slugs by section and updates a source's section", async () => {
+    const csp = await storage.getSourceSlugsBySection("csp");
+    expect(csp).toHaveLength(11);
+    expect(csp).toContain("aws_ml");
+
+    const all = await storage.getSources();
+    const ionq = all.find((s) => s.slug === "ionq")!;
+    const updated = await storage.updateSource(ionq.id, { section: "ai" });
+    expect(updated?.section).toBe("ai");
+    expect(await storage.getSourceSlugsBySection("quantum")).toHaveLength(4);
+
+    // Restore so later tests in this file see the seeded mapping.
+    await storage.updateSource(ionq.id, { section: "quantum" });
+  });
+
   it("create / update / delete round-trip", async () => {
     const created = await storage.createSource({
       slug: "test_feed",

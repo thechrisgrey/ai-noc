@@ -187,10 +187,11 @@ export interface IStorage {
     patch: { content?: string; subject?: string | null; status?: string; sentAt?: string | null },
   ): Promise<Briefing | undefined>;
   getSources(enabledOnly?: boolean): Promise<Source[]>;
+  getSourceSlugsBySection(section: string): Promise<string[]>;
   createSource(s: InsertSource): Promise<Source>;
   updateSource(
     id: number,
-    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string; section?: string },
   ): Promise<Source | undefined>;
   deleteSource(id: number): Promise<void>;
   close(): Promise<void>;
@@ -787,6 +788,14 @@ export class DatabaseStorage implements IStorage {
       : await query.orderBy(asc(sources.id));
   }
 
+  async getSourceSlugsBySection(section: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ slug: sources.slug })
+      .from(sources)
+      .where(eq(sources.section, section));
+    return rows.map((r: { slug: string }) => r.slug);
+  }
+
   async createSource(s: InsertSource): Promise<Source> {
     const rows = await this.db.insert(sources).values(s).returning();
     return rows[0];
@@ -794,12 +803,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateSource(
     id: number,
-    patch: { enabled?: boolean; label?: string; defaultCategory?: string },
+    patch: { enabled?: boolean; label?: string; defaultCategory?: string; section?: string },
   ): Promise<Source | undefined> {
     const set: Partial<InsertSource> = {};
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
     if (patch.label !== undefined) set.label = patch.label;
     if (patch.defaultCategory !== undefined) set.defaultCategory = patch.defaultCategory;
+    if (patch.section !== undefined) set.section = patch.section;
     if (Object.keys(set).length === 0) {
       const rows = await this.db.select().from(sources).where(eq(sources.id, id)).limit(1);
       return rows[0];

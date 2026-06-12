@@ -1,6 +1,6 @@
 import { RefreshCw, Bookmark, Bell, BellOff } from "lucide-react";
 import type { UseMutationResult } from "@tanstack/react-query";
-import { type Stats } from "./constants";
+import { type Stats, type SectionFilter, SECTION_FILTERS } from "./constants";
 import { StatusBar } from "./StatusBar";
 import { BriefWorkshop } from "./BriefWorkshop";
 import * as notifications from "@/lib/notifications";
@@ -13,6 +13,8 @@ interface HeaderProps {
   setNotificationsEnabled: (v: boolean) => void;
   refreshMutation: UseMutationResult<any, Error, void, unknown>;
   bookmarksCount: number;
+  selectedSection: SectionFilter;
+  onSelectSection: (s: SectionFilter) => void;
 }
 
 export function Header({
@@ -23,6 +25,8 @@ export function Header({
   setNotificationsEnabled,
   refreshMutation,
   bookmarksCount,
+  selectedSection,
+  onSelectSection,
 }: HeaderProps) {
   return (
     <header className="flex-shrink-0 h-14 flex items-center border-b border-white/[0.06] bg-background/80 backdrop-blur-sm px-5 z-20">
@@ -53,6 +57,28 @@ export function Header({
             </p>
           </div>
         </div>
+
+        <nav
+          aria-label="Section filter"
+          className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.04] p-0.5"
+        >
+          {SECTION_FILTERS.map((s) => (
+            <button
+              key={s.value}
+              onClick={() => onSelectSection(s.value)}
+              aria-label={`Show ${s.label} section`}
+              aria-pressed={selectedSection === s.value}
+              className={`px-2 sm:px-2.5 py-1 text-[10px] rounded-md uppercase tracking-[0.14em] data-readout transition-colors ${
+                selectedSection === s.value
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+              }`}
+            >
+              <span className="sm:hidden">{s.shortLabel}</span>
+              <span className="hidden sm:inline">{s.label}</span>
+            </button>
+          ))}
+        </nav>
 
         <StatusBar lastSynced={stats?.lastRefreshed} />
 

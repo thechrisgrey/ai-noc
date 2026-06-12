@@ -27,6 +27,19 @@ export type Category =
   | "policy"
   | "infrastructure";
 
+export type SectionFilter = "all" | "ai" | "csp" | "quantum";
+
+export const SECTION_FILTERS: {
+  value: SectionFilter;
+  label: string;
+  shortLabel: string;
+}[] = [
+  { value: "all", label: "ALL", shortLabel: "ALL" },
+  { value: "ai", label: "AI", shortLabel: "AI" },
+  { value: "csp", label: "CSP", shortLabel: "CSP" },
+  { value: "quantum", label: "QUANTUM", shortLabel: "QM" },
+];
+
 // ─── Constants ───────────────────────────────────────────────────
 
 export const CATEGORIES: {

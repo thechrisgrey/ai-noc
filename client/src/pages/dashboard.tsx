@@ -19,6 +19,7 @@ import {
   KpiCard,
   getTimeGroup,
   type Category,
+  type SectionFilter,
   type FeedItemWithBookmark,
   type Stats,
 } from "@/components/dashboard";
@@ -52,6 +53,13 @@ export default function Dashboard() {
       (localStorage.getItem("ai-noc-sort") as "time" | "priority") ||
       "time",
   );
+  const [selectedSection, setSelectedSection] = useState<SectionFilter>(() => {
+    const fromUrl = initParams.get("section");
+    if (fromUrl === "ai" || fromUrl === "csp" || fromUrl === "quantum") return fromUrl;
+    const stored = localStorage.getItem("ai-noc-section");
+    if (stored === "ai" || stored === "csp" || stored === "quantum") return stored;
+    return "all";
+  });
   const [savingWatchlist, setSavingWatchlist] = useState(false);
   const [watchlistName, setWatchlistName] = useState("");
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
@@ -375,6 +383,11 @@ export default function Dashboard() {
     setShowBookmarks(false);
   }, []);
 
+  const handleSelectSection = useCallback((s: SectionFilter) => {
+    setSelectedSection(s);
+    setShowBookmarks(false);
+  }, []);
+
   const handleSelectSource = useCallback((source: string) => {
     setSelectedSource((prev) => prev === source ? "all" : source);
     setShowBookmarks(false);
@@ -451,6 +464,8 @@ export default function Dashboard() {
           setNotificationsEnabled={setNotificationsEnabled}
           refreshMutation={refreshMutation}
           bookmarksCount={bookmarksList.length}
+          selectedSection={selectedSection}
+          onSelectSection={handleSelectSection}
         />
 
         <MobileCategoryBar

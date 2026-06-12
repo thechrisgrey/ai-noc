@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
-import { useQuery, useInfiniteQuery, useMutation, type InfiniteData } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, keepPreviousData, type InfiniteData } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFeedWebSocket } from "@/hooks/use-feed-websocket";
@@ -156,6 +156,7 @@ export default function Dashboard() {
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     initialPageParam: undefined as string | undefined,
+    placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       (query.state.data?.pages.length ?? 0) <= 3 ? 60000 : false,
   });
@@ -182,6 +183,7 @@ export default function Dashboard() {
       return res.json();
     },
     refetchInterval: 30000,
+    placeholderData: keepPreviousData,
   });
 
   const { data: bookmarksList = [] } = useQuery<any[]>({

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { CATEGORIES } from "./constants";
 import { getSourceMeta } from "./utils";
+import { SECTIONS, type Section } from "@shared/constants";
 
 interface ManagedSource {
   id: number;
@@ -27,7 +28,7 @@ interface ManagedSource {
   label: string;
   url: string;
   defaultCategory: string;
-  section: string;
+  section: Section;
   enabled: boolean;
   createdAt: string;
   itemCount: number;
@@ -43,11 +44,7 @@ interface ManagedSource {
 
 const SOURCE_CATEGORIES = CATEGORIES.filter((c) => c.value !== "all");
 
-const SOURCE_SECTIONS = [
-  { value: "ai", label: "AI" },
-  { value: "csp", label: "CSP" },
-  { value: "quantum", label: "QUANTUM" },
-];
+const SOURCE_SECTIONS = SECTIONS.map((s) => ({ value: s, label: s.toUpperCase() }));
 
 const INPUT_CLASS =
   "w-full text-[11px] px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 data-readout";
@@ -69,7 +66,7 @@ function SourcesPanel() {
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
   const [category, setCategory] = useState("");
-  const [section, setSection] = useState("ai");
+  const [section, setSection] = useState<Section>("ai");
   const [formError, setFormError] = useState<string | null>(null);
   const [added, setAdded] = useState<{ feedTitle: string; itemCount: number } | null>(null);
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -79,7 +76,7 @@ function SourcesPanel() {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (body: { url: string; label: string; defaultCategory: string; section: string }) => {
+    mutationFn: async (body: { url: string; label: string; defaultCategory: string; section: Section }) => {
       const res = await apiRequest("POST", "/api/sources", body);
       return res.json() as Promise<ManagedSource & { feedTitle: string; itemCount: number }>;
     },
@@ -106,7 +103,7 @@ function SourcesPanel() {
   });
 
   const sectionMutation = useMutation({
-    mutationFn: async ({ id, section: s }: { id: number; section: string }) => {
+    mutationFn: async ({ id, section: s }: { id: number; section: Section }) => {
       await apiRequest("PATCH", `/api/sources/${id}`, { section: s });
     },
     onSettled: () => {
@@ -125,7 +122,7 @@ function SourcesPanel() {
   });
 
   const canSubmit =
-    url.trim() !== "" && label.trim() !== "" && category !== "" && section !== "" && !addMutation.isPending;
+    url.trim() !== "" && label.trim() !== "" && category !== "" && !addMutation.isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -177,7 +174,7 @@ function SourcesPanel() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={section} onValueChange={setSection}>
+        <Select value={section} onValueChange={(v) => setSection(v as Section)}>
           <SelectTrigger
             aria-label="Section"
             className="h-8 text-[10px] rounded-lg border-white/[0.08] bg-white/[0.04] data-readout uppercase tracking-[0.14em]"
@@ -256,7 +253,7 @@ function SourcesPanel() {
               </span>
               <Select
                 value={s.section || "ai"}
-                onValueChange={(v) => sectionMutation.mutate({ id: s.id, section: v })}
+                onValueChange={(v) => sectionMutation.mutate({ id: s.id, section: v as Section })}
               >
                 <SelectTrigger
                   aria-label={`Section for ${s.label}`}

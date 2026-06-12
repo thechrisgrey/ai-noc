@@ -681,6 +681,9 @@ export class DatabaseStorage implements IStorage {
   // First-mover leaderboard: within each multi-source story cluster, credit the
   // source(s) that published at the earliest timestamp as the "first", and
   // measure how far behind the rest trailed (median lag, in seconds).
+  // When sourceSlugs is passed, "first" and median lag are computed within the
+  // filtered set only (a section-relative leaderboard), since the slug filter
+  // applies inside the CTE before the window functions.
   async getSourceIntel(days: number, sourceSlugs?: string[]): Promise<SourceIntelRow[]> {
     if (sourceSlugs && sourceSlugs.length === 0) return [];
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();

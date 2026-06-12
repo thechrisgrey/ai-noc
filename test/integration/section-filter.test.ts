@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestStorage } from "../helpers/db";
 import type { DatabaseStorage } from "../../server/storage";
-import type { InsertFeedItem } from "@shared/schema";
+import type { FeedItem, InsertFeedItem } from "@shared/schema";
+
+/** Deterministic 1024-d unit vector pointing along a single axis. */
+function unitVector(axis: number): number[] {
+  const v = new Array(1024).fill(0);
+  v[axis] = 1;
+  return v;
+}
 
 let guidCounter = 0;
 function makeItem(overrides: Partial<InsertFeedItem> = {}): InsertFeedItem {
@@ -28,13 +35,15 @@ function makeItem(overrides: Partial<InsertFeedItem> = {}): InsertFeedItem {
 
 describe("sourceSlugs filtering", () => {
   let storage: DatabaseStorage;
+  let awsItem: FeedItem;
+  let openaiItem: FeedItem;
 
   beforeAll(async () => {
     const { storage: s } = await createTestStorage();
     storage = s;
-    await storage.createFeedItem(makeItem({ source: "aws_ml", sourceLabel: "AWS ML Blog" }));
+    awsItem = await storage.createFeedItem(makeItem({ source: "aws_ml", sourceLabel: "AWS ML Blog" }));
     await storage.createFeedItem(makeItem({ source: "ionq", sourceLabel: "IonQ" }));
-    await storage.createFeedItem(makeItem({ source: "openai", sourceLabel: "OpenAI", isBreaking: true }));
+    openaiItem = await storage.createFeedItem(makeItem({ source: "openai", sourceLabel: "OpenAI", isBreaking: true }));
   });
 
   afterAll(async () => {
@@ -84,6 +93,22 @@ describe("sourceSlugs filtering", () => {
     const activity = await storage.getSourceActivity(7, ["ionq"]);
     expect(Object.keys(activity)).toEqual(["ionq"]);
     expect(await storage.getSourceActivity(7, [])).toEqual({});
+  });
+
+  it("scopes searchSemantic to the given slugs", async () => {
+    // Real embeddings on two sources so the non-empty IN-list fragment
+    // actually executes against pgvector (not just the short-circuit).
+    const vec = unitVector(0);
+    await storage.updateEmbeddings([
+      { id: awsItem.id, embedding: vec },
+      { id: openaiItem.id, embedding: vec },
+    ]);
+
+    const results = await storage.searchSemantic(vec, { sourceSlugs: ["aws_ml"] });
+    expect(results).toHaveLength(1);
+    expect(results[0].source).toBe("aws_ml");
+
+    expect(await storage.searchSemantic(vec, { sourceSlugs: [] })).toEqual([]);
   });
 
   it("scopes getSourceIntel to the given slugs", async () => {

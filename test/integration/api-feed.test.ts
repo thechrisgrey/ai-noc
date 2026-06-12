@@ -17,7 +17,7 @@ function buildApp(storage: DatabaseStorage) {
   app.use(express.json());
 
   app.get("/api/feed", async (req, res) => {
-    const { limit, cursor, category, source, search, sort } = req.query;
+    const { limit, cursor, category, source, search, sort, section } = req.query;
 
     const validCategories = ["all", "model_release", "research", "funding", "product", "policy", "infrastructure"];
     const safeLimit = Math.max(1, Math.min(parseInt(limit as string) || 30, 100));
@@ -26,6 +26,18 @@ function buildApp(storage: DatabaseStorage) {
     const safeSource = typeof source === "string" && /^[a-z0-9_]+$/.test(source) ? source : undefined;
     const safeSearch = typeof search === "string" ? search.trim().slice(0, 200) || undefined : undefined;
 
+    const sectionParam = section;
+    let sourceSlugs: string[] | undefined;
+    if (sectionParam !== undefined) {
+      if (
+        typeof sectionParam !== "string" ||
+        !["ai", "csp", "quantum"].includes(sectionParam)
+      ) {
+        return res.status(400).json({ error: "section must be one of: ai, csp, quantum" });
+      }
+      sourceSlugs = await storage.getSourceSlugsBySection(sectionParam);
+    }
+
     const result = await storage.getFeedItems({
       limit: safeLimit,
       cursor: cursor as string | undefined,
@@ -33,6 +45,7 @@ function buildApp(storage: DatabaseStorage) {
       source: safeSource,
       search: safeSearch,
       sort: safeSort,
+      sourceSlugs,
     });
 
     const bookmarkedIds = await storage.getBookmarkedIds(result.items.map((i) => i.id));
@@ -73,6 +86,21 @@ describe("GET /api/feed", () => {
         imageUrl: null,
       });
     }
+
+    // CSP-section item (aws_ml is seeded by migration 0007 with section=csp via 0008)
+    await storage.createFeedItem({
+      title: "AWS ML Post",
+      description: "An AWS ML blog post",
+      url: "https://aws.amazon.com/blogs/machine-learning/post-1",
+      source: "aws_ml",
+      sourceLabel: "AWS ML Blog",
+      category: "product",
+      publishedAt: new Date(now - 6000).toISOString(),
+      fetchedAt: new Date(now).toISOString(),
+      guid: "feed-aws-ml-section-test-1",
+      isBreaking: false,
+      imageUrl: null,
+    });
   });
 
   afterAll(async () => {
@@ -119,6 +147,19 @@ describe("GET /api/feed", () => {
     expect(res.status).toBe(200);
     // should NOT filter to bogus — should return unfiltered set
     expect(res.body.items.length).toBeGreaterThan(0);
+  });
+
+  it("filters by section, resolving slugs through the sources table", async () => {
+    const res = await request(app).get("/api/feed?section=csp");
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.items.every((i: FeedItem) => i.source === "aws_ml")).toBe(true);
+  });
+
+  it("rejects an unknown section", async () => {
+    const res = await request(app).get("/api/feed?section=blockchain");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/section must be one of/);
   });
 });
 

@@ -40,16 +40,21 @@ describe("sources table (PGlite)", () => {
     await storage.close();
   });
 
-  it("is seeded by the migration with unique slugs and urls", async () => {
+  it("is seeded by the migrations with unique slugs and urls", async () => {
     const all = await storage.getSources();
-    expect(all.length).toBe(22);
+    expect(all.length).toBe(40);
     expect(all.every((s) => s.enabled)).toBe(true);
-    expect(all.every((s) => s.createdAt === "2026-06-10T00:00:00.000Z")).toBe(true);
+    expect(
+      all.every((s) => /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/.test(s.createdAt)),
+    ).toBe(true);
 
     const slugs = all.map((s) => s.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
     expect(slugs).toContain("openai");
     expect(slugs).toContain("anthropic_gh");
+    expect(slugs).toContain("aws_ml");
+    expect(slugs).toContain("thinking_machines");
+    expect(slugs).toContain("ionq");
     expect(new Set(all.map((s) => s.url)).size).toBe(all.length);
   });
 

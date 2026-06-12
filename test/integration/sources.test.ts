@@ -58,6 +58,24 @@ describe("sources table (PGlite)", () => {
     expect(new Set(all.map((s) => s.url)).size).toBe(all.length);
   });
 
+  it("assigns every source a section per the 0008 mapping", async () => {
+    const all = await storage.getSources();
+    const bySlug = new Map(all.map((s) => [s.slug, s.section]));
+
+    const csp = [
+      "aws_ml", "aws_whats_new", "amazon_science", "gcp_ai", "deepmind",
+      "google_research", "google_devs", "vertex_genai", "nvidia_dev",
+      "nvidia_genai", "ibm_research",
+    ];
+    const quantum = ["ionq", "quera", "pasqal", "rigetti", "quantum_insider"];
+
+    for (const slug of csp) expect(bySlug.get(slug), slug).toBe("csp");
+    for (const slug of quantum) expect(bySlug.get(slug), slug).toBe("quantum");
+
+    const aiCount = all.filter((s) => s.section === "ai").length;
+    expect(aiCount).toBe(24);
+  });
+
   it("create / update / delete round-trip", async () => {
     const created = await storage.createSource({
       slug: "test_feed",

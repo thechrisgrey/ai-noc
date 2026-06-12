@@ -1,3 +1,10 @@
+// ─── Domain sections ───────────────────────────────────────────────
+// Source-level taxonomy orthogonal to content categories: which desk a
+// source belongs to (AI, cloud providers, quantum). "all" is a UI-only
+// filter value, never stored.
+export const SECTIONS = ["ai", "csp", "quantum"] as const;
+export type Section = (typeof SECTIONS)[number];
+
 /** Priority score at or above which an item is flagged breaking and broadcast as an alert. */
 export const PRIORITY_ALERT_THRESHOLD = 80;
 

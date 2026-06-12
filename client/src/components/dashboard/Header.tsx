@@ -52,7 +52,7 @@ export function Header({
             <h1 className="text-sm font-semibold tracking-[0.14em] uppercase text-foreground">
               AI OPS CENTER
             </h1>
-            <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground hidden lg:block">
+            <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground hidden xl:block">
               INTELLIGENCE MONITORING & OBSERVABILITY
             </p>
           </div>
@@ -60,7 +60,7 @@ export function Header({
 
         <nav
           aria-label="Section filter"
-          className="hidden md:flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.04] p-0.5"
+          className="hidden lg:flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.04] p-0.5"
         >
           {SECTION_FILTERS.map((s) => (
             <button

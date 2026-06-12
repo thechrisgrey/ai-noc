@@ -177,7 +177,7 @@ export function MobileCategoryBar({
 }) {
   return (
     <div className="lg:hidden flex-shrink-0 border-b border-white/[0.06]">
-      <div className="md:hidden px-3 pt-2 pb-1 overflow-x-auto hide-scrollbar">
+      <div className="px-3 pt-2 pb-1 overflow-x-auto hide-scrollbar">
         <div className="flex gap-1.5">
           {SECTION_FILTERS.map((s) => {
             const isActive = selectedSection === s.value;
@@ -199,7 +199,7 @@ export function MobileCategoryBar({
           })}
         </div>
       </div>
-      <div className="px-3 pb-2 md:pt-2 overflow-x-auto hide-scrollbar">
+      <div className="px-3 pb-2 overflow-x-auto hide-scrollbar">
         <div className="flex gap-1.5">
           {CATEGORIES.map((cat) => {
             const count =

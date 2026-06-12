@@ -27,6 +27,7 @@ interface ManagedSource {
   label: string;
   url: string;
   defaultCategory: string;
+  section: string;
   enabled: boolean;
   createdAt: string;
   itemCount: number;
@@ -41,6 +42,12 @@ interface ManagedSource {
 }
 
 const SOURCE_CATEGORIES = CATEGORIES.filter((c) => c.value !== "all");
+
+const SOURCE_SECTIONS = [
+  { value: "ai", label: "AI" },
+  { value: "csp", label: "CSP" },
+  { value: "quantum", label: "QUANTUM" },
+];
 
 const INPUT_CLASS =
   "w-full text-[11px] px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 data-readout";
@@ -62,6 +69,7 @@ function SourcesPanel() {
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
   const [category, setCategory] = useState("");
+  const [section, setSection] = useState("ai");
   const [formError, setFormError] = useState<string | null>(null);
   const [added, setAdded] = useState<{ feedTitle: string; itemCount: number } | null>(null);
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -71,7 +79,7 @@ function SourcesPanel() {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (body: { url: string; label: string; defaultCategory: string }) => {
+    mutationFn: async (body: { url: string; label: string; defaultCategory: string; section: string }) => {
       const res = await apiRequest("POST", "/api/sources", body);
       return res.json() as Promise<ManagedSource & { feedTitle: string; itemCount: number }>;
     },
@@ -97,6 +105,15 @@ function SourcesPanel() {
     },
   });
 
+  const sectionMutation = useMutation({
+    mutationFn: async ({ id, section: s }: { id: number; section: string }) => {
+      await apiRequest("PATCH", `/api/sources/${id}`, { section: s });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sources"] });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/sources/${id}`);
@@ -108,13 +125,13 @@ function SourcesPanel() {
   });
 
   const canSubmit =
-    url.trim() !== "" && label.trim() !== "" && category !== "" && !addMutation.isPending;
+    url.trim() !== "" && label.trim() !== "" && category !== "" && section !== "" && !addMutation.isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     setAdded(null);
     setFormError(null);
-    addMutation.mutate({ url: url.trim(), label: label.trim(), defaultCategory: category });
+    addMutation.mutate({ url: url.trim(), label: label.trim(), defaultCategory: category, section });
   };
 
   return (
@@ -156,6 +173,25 @@ function SourcesPanel() {
                 className="text-[10px] data-readout uppercase tracking-[0.14em]"
               >
                 {cat.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={section} onValueChange={setSection}>
+          <SelectTrigger
+            aria-label="Section"
+            className="h-8 text-[10px] rounded-lg border-white/[0.08] bg-white/[0.04] data-readout uppercase tracking-[0.14em]"
+          >
+            <SelectValue placeholder="SECTION" />
+          </SelectTrigger>
+          <SelectContent>
+            {SOURCE_SECTIONS.map((sec) => (
+              <SelectItem
+                key={sec.value}
+                value={sec.value}
+                className="text-[10px] data-readout uppercase tracking-[0.14em]"
+              >
+                {sec.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -218,6 +254,28 @@ function SourcesPanel() {
               <span className="data-readout text-[10px] tabular-nums text-muted-foreground flex-shrink-0">
                 {s.itemCount}
               </span>
+              <Select
+                value={s.section || "ai"}
+                onValueChange={(v) => sectionMutation.mutate({ id: s.id, section: v })}
+              >
+                <SelectTrigger
+                  aria-label={`Section for ${s.label}`}
+                  className="h-6 w-[88px] text-[9px] rounded border-white/[0.08] bg-white/[0.04] data-readout uppercase tracking-[0.14em] flex-shrink-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCE_SECTIONS.map((sec) => (
+                    <SelectItem
+                      key={sec.value}
+                      value={sec.value}
+                      className="text-[9px] data-readout uppercase tracking-[0.14em]"
+                    >
+                      {sec.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Switch
                 checked={s.enabled}
                 onCheckedChange={(enabled) => toggleMutation.mutate({ id: s.id, enabled })}

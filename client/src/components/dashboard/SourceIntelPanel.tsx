@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { getSourceMeta } from "./utils";
+import type { SectionFilter } from "./constants";
 
 interface SourceIntelRow {
   source: string;
@@ -30,13 +31,14 @@ function formatLag(seconds: number | null): string | null {
   return `+${(seconds / 3600).toFixed(1)}h`;
 }
 
-export function SourceIntelPanel() {
+export function SourceIntelPanel({ section }: { section: SectionFilter }) {
   const [days, setDays] = useState(7);
 
   const { data } = useQuery<SourceIntelResponse>({
-    queryKey: ["/api/sources/intel", days],
+    queryKey: ["/api/sources/intel", days, section],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/sources/intel?days=${days}`);
+      const sectionQs = section !== "all" ? `&section=${section}` : "";
+      const res = await apiRequest("GET", `/api/sources/intel?days=${days}${sectionQs}`);
       return res.json();
     },
     staleTime: 5 * 60 * 1000,

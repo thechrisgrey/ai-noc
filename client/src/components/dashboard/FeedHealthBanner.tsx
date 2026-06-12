@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import { getSourceMeta } from "./utils";
+import type { SectionFilter } from "./constants";
 
-export function FeedHealthBanner() {
+export function FeedHealthBanner({ section }: { section: SectionFilter }) {
   const [expanded, setExpanded] = useState(false);
   const { data } = useQuery<{
     health: Record<string, any>;
     summary: { online: number; failing: number; total: number };
   }>({
-    queryKey: ["/api/sources/health"],
+    queryKey: ["/api/sources/health", section],
+    queryFn: async () => {
+      const qs = section !== "all" ? `?section=${section}` : "";
+      const res = await apiRequest("GET", `/api/sources/health${qs}`);
+      return res.json();
+    },
     refetchInterval: 60000,
   });
 

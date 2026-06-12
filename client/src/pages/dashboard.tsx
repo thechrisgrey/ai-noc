@@ -79,13 +79,18 @@ export default function Dashboard() {
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (sortMode !== "time") params.set("sort", sortMode);
     if (isSemantic) params.set("mode", "semantic");
+    if (selectedSection !== "all") params.set("section", selectedSection);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic]);
+  }, [selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic, selectedSection]);
 
   useEffect(() => {
     localStorage.setItem("ai-noc-sort", sortMode);
   }, [sortMode]);
+
+  useEffect(() => {
+    localStorage.setItem("ai-noc-section", selectedSection);
+  }, [selectedSection]);
 
   // ── WebSocket ──
   const wsCallbacks = useMemo(() => ({
@@ -134,7 +139,7 @@ export default function Dashboard() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<FeedPage>({
-    queryKey: ["/api/feed", selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
+    queryKey: ["/api/feed", selectedSection, selectedCategory, selectedSource, debouncedSearch, sortMode, isSemantic],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (selectedCategory !== "all") params.set("category", selectedCategory);
@@ -142,6 +147,7 @@ export default function Dashboard() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (sortMode !== "time") params.set("sort", sortMode);
       if (isSemantic) params.set("mode", "semantic");
+      if (selectedSection !== "all") params.set("section", selectedSection);
       // Semantic results come as a single distance-ranked page (nextCursor null).
       if (pageParam && !isSemantic) params.set("cursor", pageParam as string);
       params.set("limit", "30");
@@ -169,7 +175,12 @@ export default function Dashboard() {
   }, [feedData]);
 
   const { data: stats, isError: statsError } = useQuery<Stats>({
-    queryKey: ["/api/stats"],
+    queryKey: ["/api/stats", selectedSection],
+    queryFn: async () => {
+      const qs = selectedSection !== "all" ? `?section=${selectedSection}` : "";
+      const res = await apiRequest("GET", `/api/stats${qs}`);
+      return res.json();
+    },
     refetchInterval: 30000,
   });
 
@@ -553,7 +564,7 @@ export default function Dashboard() {
             />
           </div>
 
-          <IntelPanel stats={stats} feedItems={feedItems} />
+          <IntelPanel stats={stats} feedItems={feedItems} section={selectedSection} />
         </div>
       </div>
     </div>

@@ -15,3 +15,4 @@ infra/node_modules
 infra/dist
 infra/cdk.out
 AI Operations Center.zip
+infra/cdk.context.json

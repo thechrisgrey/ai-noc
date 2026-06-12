@@ -23,6 +23,8 @@ export class AiNocStack extends cdk.Stack {
     const httpsEnabled = Boolean(domainName && hostedZoneId);
     const httpRedirect = httpsEnabled && this.node.tryGetContext("httpRedirect") === "true";
     const sesRegion = this.node.tryGetContext("sesRegion") ?? "us-east-1";
+    // Digest recipient is deploy-time config, not source; empty disables delivery.
+    const digestEmailTo = this.node.tryGetContext("digestEmailTo") ?? "";
 
     // ─── VPC ───────────────────────────────────────────────
     const vpc = new ec2.Vpc(this, "Vpc", {
@@ -134,7 +136,7 @@ export class AiNocStack extends cdk.Stack {
         RETENTION_DAYS: "90",
         EMBEDDINGS_ENABLED: "true",
         CLUSTER_SIM_THRESHOLD: "0.80",
-        DIGEST_EMAIL_TO: "christian.perez@altivum.io",
+        DIGEST_EMAIL_TO: digestEmailTo,
         DIGEST_HOUR_UTC: "12",
       },
       secrets: {

@@ -8,6 +8,7 @@ set -euo pipefail
 #   DOMAIN_NAME     forwarded as -c domainName=...
 #   HOSTED_ZONE_ID  forwarded as -c hostedZoneId=...
 #   HTTP_REDIRECT   forwarded as -c httpRedirect=...
+#   DIGEST_EMAIL_TO forwarded as -c digestEmailTo=... (digest recipient; empty disables)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGION="${AWS_REGION:-us-east-1}"
@@ -37,6 +38,9 @@ if [ -n "${HOSTED_ZONE_ID:-}" ]; then
 fi
 if [ -n "${HTTP_REDIRECT:-}" ]; then
   CDK_ARGS+=(-c "httpRedirect=$HTTP_REDIRECT")
+fi
+if [ -n "${DIGEST_EMAIL_TO:-}" ]; then
+  CDK_ARGS+=(-c "digestEmailTo=$DIGEST_EMAIL_TO")
 fi
 
 cd "$ROOT/infra"

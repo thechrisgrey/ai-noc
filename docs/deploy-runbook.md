@@ -97,8 +97,8 @@ to that tag via `-c imageTag=<short-sha>`:
 ```
 
 Optional env vars are forwarded as CDK context: `DOMAIN_NAME`,
-`HOSTED_ZONE_ID`, `HTTP_REDIRECT` (see Phase 4), plus `ECR_URI` / `AWS_REGION`
-overrides.
+`HOSTED_ZONE_ID`, `HTTP_REDIRECT` (see Phase 4), `DIGEST_EMAIL_TO` (see
+Phase 6), plus `ECR_URI` / `AWS_REGION` overrides.
 
 Rollback:
 
@@ -110,10 +110,9 @@ Rollback:
 
 ## Phase 4 — Domain noc.altivum.ai
 
-1. Create a delegated hosted zone `noc.altivum.ai` in Route 53 (same pattern as
-   the existing `vetroi.altivum.ai` zone), then add the zone's four NS records
-   as an `NS` record set for `noc` in the `altivum.ai` apex zone. Note the new
-   zone ID.
+1. Create a delegated hosted zone `noc.altivum.ai` in Route 53, then add the
+   zone's four NS records as an `NS` record set for `noc` in the `altivum.ai`
+   apex zone. Note the new zone ID.
 
 2. Amplify custom domain (console): Amplify -> `d22gnzk10dja9z` -> Hosting ->
    Custom domains -> Add domain -> `noc.altivum.ai`. Amplify provisions the
@@ -167,8 +166,10 @@ Notes:
 
 The task runs a self-scheduling timer that, at `DIGEST_HOUR_UTC` (default `12`,
 UTC), generates the daily digest and delivers it. Delivery is via Amazon SES to
-`DIGEST_EMAIL_TO` (`christian.perez@altivum.io`), with an optional secondary
-webhook (`DIGEST_WEBHOOK_URL`). The task role grants `ses:SendEmail` scoped to
+`DIGEST_EMAIL_TO`, which is deploy-time config: export `DIGEST_EMAIL_TO` before
+running `./scripts/release.sh` (forwarded as the `digestEmailTo` CDK context;
+empty disables email delivery). An optional secondary webhook is available via
+`DIGEST_WEBHOOK_URL`. The task role grants `ses:SendEmail` scoped to
 `arn:aws:ses:us-east-1:<account>:identity/*`.
 
 > **WARNING:** Verify the SES identity **before** the first digest fires.
@@ -179,14 +180,14 @@ webhook (`DIGEST_WEBHOOK_URL`). The task role grants `ses:SendEmail` scoped to
 1. Create and verify the sender identity (run in the SES region, `us-east-1`):
 
    ```sh
-   aws sesv2 create-email-identity --email-identity christian.perez@altivum.io --region us-east-1
+   aws sesv2 create-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1
    ```
 
    Then open the verification email AWS sends to that address and click the
    verification link. Confirm:
 
    ```sh
-   aws sesv2 get-email-identity --email-identity christian.perez@altivum.io --region us-east-1 \
+   aws sesv2 get-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1 \
      --query 'VerifiedForSendingStatus'   # expect true
    ```
 

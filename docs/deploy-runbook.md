@@ -3,7 +3,18 @@
 Ordered hardening and release procedure for ai-noc. Run phases in order; each
 phase is independently verifiable before moving on.
 
-Reference IDs (this account):
+Every AWS command in this runbook targets the Altivum account (profile
+`altivum-og`, us-east-1). This repo is public, so the account id is not written
+here: `infra/app.ts`, `scripts/release.sh` and `scripts/apply-amplify-rewrites.sh`
+read it from `AINOC_AWS_ACCOUNT` or, failing that, from a gitignored
+`.aws-account` file at the repo root (one line, the 12-digit id). With neither,
+they refuse. The two scripts pin the profile themselves (override it with
+`AI_NOC_AWS_PROFILE`; the account is still checked). Pass `--profile altivum-og`
+on every hand-run `aws` or `cdk` command below, plus `--region us-east-1` for
+regional services. A bare command follows the shell's `AWS_PROFILE`, which may
+be Delta Centric (`personal-dev`), where this stack does not exist.
+
+Reference IDs (the Altivum account):
 
 | Resource | Value |
 | --- | --- |
@@ -21,8 +32,8 @@ locked to the CloudFront origin-facing prefix list, and the
 
 ```sh
 cd infra
-npx cdk diff
-npx cdk deploy
+npx cdk diff --profile altivum-og
+npx cdk deploy --profile altivum-og
 ```
 
 > **WARNING:** The security group lockdown takes effect the moment this stack
@@ -63,11 +74,11 @@ CloudFront origin so only CloudFront-fronted traffic passes.
 3. CLI alternative (etag dance):
 
    ```sh
-   aws cloudfront get-distribution-config --id EFPOKQM5KJ4EF > dist.json
+   aws cloudfront get-distribution-config --profile altivum-og --id EFPOKQM5KJ4EF > dist.json
    # Note the "ETag" field, then edit dist.json: under DistributionConfig.Origins.Items[<alb origin>].CustomHeaders
    # set Quantity to 1 and add {"HeaderName": "X-Origin-Verify", "HeaderValue": "<secret value>"}.
    # Strip the top-level "ETag" key so only DistributionConfig remains, then:
-   aws cloudfront update-distribution --id EFPOKQM5KJ4EF --if-match <ETag> --distribution-config file://dist-config-only.json
+   aws cloudfront update-distribution --profile altivum-og --id EFPOKQM5KJ4EF --if-match <ETag> --distribution-config file://dist-config-only.json
    ```
 
 Verify (use a non-exempt endpoint — `/api/health` passes even without the
@@ -180,14 +191,14 @@ empty disables email delivery). An optional secondary webhook is available via
 1. Create and verify the sender identity (run in the SES region, `us-east-1`):
 
    ```sh
-   aws sesv2 create-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1
+   aws sesv2 create-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1 --profile altivum-og
    ```
 
    Then open the verification email AWS sends to that address and click the
    verification link. Confirm:
 
    ```sh
-   aws sesv2 get-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1 \
+   aws sesv2 get-email-identity --email-identity "$DIGEST_EMAIL_TO" --region us-east-1 --profile altivum-og \
      --query 'VerifiedForSendingStatus'   # expect true
    ```
 

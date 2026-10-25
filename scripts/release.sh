@@ -5,12 +5,17 @@ set -euo pipefail
 # stack pinned to that exact tag. Optional env vars:
 #   ECR_URI         full repo URI (default: <account>.dkr.ecr.<region>.amazonaws.com/ai-noc)
 #   AWS_REGION      region (default: us-east-1)
+#   AI_NOC_AWS_PROFILE  AWS profile (default: altivum-og); must resolve to the expected account
+#   AINOC_AWS_ACCOUNT   expected account id (default: .aws-account at the repo root;
+#                       with neither, the release refuses before any AWS call)
 #   DOMAIN_NAME     forwarded as -c domainName=...
 #   HOSTED_ZONE_ID  forwarded as -c hostedZoneId=...
 #   HTTP_REDIRECT   forwarded as -c httpRedirect=...
 #   DIGEST_EMAIL_TO forwarded as -c digestEmailTo=... (digest recipient; empty disables)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Pin to Altivum before any AWS call (see aws-preflight.sh).
+source "$ROOT/scripts/aws-preflight.sh"
 REGION="${AWS_REGION:-us-east-1}"
 
 if [ -z "${ECR_URI:-}" ]; then

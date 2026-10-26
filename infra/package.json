@@ -5,10 +5,10 @@
   "scripts": {
     "build": "tsc",
     "cdk": "cdk",
-    "deploy": "cdk deploy --all --require-approval never",
-    "diff": "cdk diff",
+    "deploy": "cdk deploy --all --require-approval never --profile altivum-og",
+    "diff": "cdk diff --profile altivum-og",
     "synth": "cdk synth",
-    "destroy": "cdk destroy --all"
+    "destroy": "cdk destroy --all --profile altivum-og"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",

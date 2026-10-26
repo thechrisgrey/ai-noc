@@ -16,3 +16,5 @@ infra/dist
 infra/cdk.out
 AI Operations Center.zip
 infra/cdk.context.json
+# Local AWS account id for the deploy pin (see scripts/aws-preflight.sh). Never commit it.
+.aws-account
